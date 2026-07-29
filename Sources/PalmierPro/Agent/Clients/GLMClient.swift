@@ -49,9 +49,26 @@ private final class GLMDataStreamDelegate: NSObject, URLSessionDataDelegate, @un
     private let continuation: AsyncThrowingStream<String, Error>.Continuation
     private var buffer = Data()
     private var httpResponse: HTTPURLResponse?
+    private var activeSession: URLSession?
+    private var dataTask: URLSessionDataTask?
 
     init(continuation: AsyncThrowingStream<String, Error>.Continuation) {
         self.continuation = continuation
+        super.init()
+    }
+
+    func start(request: URLRequest, configuration: URLSessionConfiguration) {
+        let taskSession = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        self.activeSession = taskSession
+        let task = taskSession.dataTask(with: request)
+        self.dataTask = task
+        task.resume()
+    }
+
+    func cancel() {
+        dataTask?.cancel()
+        activeSession?.invalidateAndCancel()
+        activeSession = nil
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
@@ -76,6 +93,10 @@ private final class GLMDataStreamDelegate: NSObject, URLSessionDataDelegate, @un
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        defer {
+            self.activeSession?.finishTasksAndInvalidate()
+            self.activeSession = nil
+        }
         if let http = httpResponse, http.statusCode >= 400 {
             let errBody = String(data: buffer, encoding: .utf8) ?? ""
             Log.agent.error("GLMClient HTTP error \(http.statusCode): \(errBody.prefix(300))")
@@ -167,12 +188,9 @@ struct GLMClient: AgentClient {
                 Log.agent.notice("GLMClient sending HTTP POST request via URLSessionDataTask (attempt \(attempts + 1))...")
                 let lineStream = AsyncThrowingStream<String, Error> { streamContinuation in
                     let delegate = GLMDataStreamDelegate(continuation: streamContinuation)
-                    let taskSession = URLSession(configuration: activeSession.configuration, delegate: delegate, delegateQueue: nil)
-                    let task = taskSession.dataTask(with: request)
-                    task.resume()
+                    delegate.start(request: request, configuration: activeSession.configuration)
                     streamContinuation.onTermination = { _ in
-                        task.cancel()
-                        taskSession.finishTasksAndInvalidate()
+                        delegate.cancel()
                     }
                 }
 
