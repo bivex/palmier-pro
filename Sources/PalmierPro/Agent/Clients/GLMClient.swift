@@ -36,12 +36,10 @@ enum GLMKeychain {
 
 private final class GLMStreamingSession: @unchecked Sendable {
     static let defaultSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.waitsForConnectivity = true
-        config.timeoutIntervalForRequest = 300
-        config.timeoutIntervalForResource = 600
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 300
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        config.urlCache = nil
         return URLSession(configuration: config)
     }()
 }
@@ -93,7 +91,7 @@ struct GLMClient: AgentClient {
         let modelEnum = AnthropicModel(rawValue: modelName) ?? .glm52
         Log.agent.notice("GLMClient connecting endpoint=\(Self.endpoint.absoluteString) model=\(modelEnum.rawValue) messagesCount=\(messages.count)")
 
-        var request = URLRequest(url: Self.endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 300)
+        var request = URLRequest(url: Self.endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -112,6 +110,7 @@ struct GLMClient: AgentClient {
         var attempts = 0
         while true {
             do {
+                Log.agent.notice("GLMClient sending HTTP POST request (attempt \(attempts + 1))...")
                 let (bytes, response) = try await session.bytes(for: request)
                 if let http = response as? HTTPURLResponse {
                     Log.agent.notice("GLMClient received response status=\(http.statusCode)")
@@ -125,6 +124,7 @@ struct GLMClient: AgentClient {
                     }
                 }
 
+                Log.agent.notice("GLMClient starting SSE line parsing...")
                 try await AnthropicSSE.parse(bytes: bytes, continuation: continuation)
                 Log.agent.notice("GLMClient stream completed successfully")
                 break
