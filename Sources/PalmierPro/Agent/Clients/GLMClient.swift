@@ -93,6 +93,7 @@ struct GLMClient: AgentClient {
 
         var request = URLRequest(url: Self.endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.httpMethod = "POST"
+        request.setValue("curl/8.7.1", forHTTPHeaderField: "User-Agent")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
@@ -108,10 +109,11 @@ struct GLMClient: AgentClient {
         )
 
         var attempts = 0
+        var activeSession = session
         while true {
             do {
                 Log.agent.notice("GLMClient sending HTTP POST request (attempt \(attempts + 1))...")
-                let (bytes, response) = try await session.bytes(for: request)
+                let (bytes, response) = try await activeSession.bytes(for: request)
                 if let http = response as? HTTPURLResponse {
                     Log.agent.notice("GLMClient received response status=\(http.statusCode)")
                     if http.statusCode >= 400 {
@@ -130,7 +132,8 @@ struct GLMClient: AgentClient {
                 break
             } catch let urlErr as URLError where (urlErr.code == .networkConnectionLost || urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut) && attempts < 2 {
                 attempts += 1
-                Log.agent.warning("GLMClient network error (\(urlErr.localizedDescription)), retrying attempt \(attempts)/2...")
+                Log.agent.warning("GLMClient network error (\(urlErr.localizedDescription)), creating fresh session and retrying (attempt \(attempts)/2)...")
+                activeSession = URLSession(configuration: session.configuration)
                 try Task.checkCancellation()
                 try? await Task.sleep(nanoseconds: 150_000_000)
                 continue
