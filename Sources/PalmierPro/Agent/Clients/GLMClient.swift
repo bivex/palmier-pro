@@ -34,14 +34,14 @@ enum GLMKeychain {
     }
 }
 
-/// Agent client for Zhipu AI GLM (GLM-5.2 / GLM-4.5 / GLM-4-Plus) via OpenAI-compatible endpoint
+/// Agent client for Zhipu AI GLM (GLM-5.2 / GLM-4.5 / GLM-4-Plus) via Z.AI Anthropic proxy endpoint
 struct GLMClient: AgentClient {
     let apiKey: String
     let modelName: String
     var maxTokens: Int = 8192
     let session: URLSession
 
-    private static let endpoint = URL(string: "https://api.z.ai/api/paas/v4/chat/completions")!
+    private static let endpoint = URL(string: "https://api.z.ai/api/anthropic/v1/messages")!
 
     init(apiKey: String, modelName: String = "glm-5.2", session: URLSession = .shared) {
         self.apiKey = apiKey
@@ -75,57 +75,24 @@ struct GLMClient: AgentClient {
     ) async throws {
         guard !apiKey.isEmpty else { throw AnthropicClientError.missingAPIKey }
 
-        var openAIMessages: [[String: Any]] = []
-        if !system.isEmpty {
-            openAIMessages.append(["role": "system", "content": system])
-        }
-
-        for msg in messages {
-            let roleStr = msg.role == .user ? "user" : "assistant"
-            var combinedText = ""
-            for block in msg.content {
-                if let text = block["text"] as? String {
-                    combinedText += text
-                }
-            }
-            openAIMessages.append(["role": roleStr, "content": combinedText])
-        }
-
-        var openAITools: [[String: Any]] = []
-        for t in tools {
-            openAITools.append([
-                "type": "function",
-                "function": [
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.inputSchema
-                ]
-            ])
-        }
-
-        var body: [String: Any] = [
-            "model": modelName,
-            "messages": openAIMessages,
-            "stream": true,
-            "max_tokens": maxTokens,
-            "temperature": 0.6,
-            "thinking": ["type": "enabled"],
-            "reasoning_effort": "max"
-        ]
-        if !openAITools.isEmpty {
-            body["tools"] = openAITools
-        }
+        let modelEnum = AnthropicModel(rawValue: modelName) ?? .glm52
 
         var request = URLRequest(url: Self.endpoint)
         request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue("text/event-stream", forHTTPHeaderField: "accept")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: AnthropicRequestBody.build(
+                model: modelEnum, maxTokens: maxTokens, system: system, tools: tools, messages: messages
+            ),
+            options: [.sortedKeys]
+        )
 
         var attempts = 0
         while true {
-            var hasYielded = false
             do {
                 let (bytes, response) = try await session.bytes(for: request)
                 if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
@@ -136,82 +103,14 @@ struct GLMClient: AgentClient {
                     throw AnthropicClientError.httpError(status: http.statusCode, body: errBody)
                 }
 
-                try await parseOpenAISSE(bytes: bytes, continuation: continuation, onYield: { hasYielded = true })
+                try await AnthropicSSE.parse(bytes: bytes, continuation: continuation)
                 break
-            } catch let urlErr as URLError where (urlErr.code == .networkConnectionLost || urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut) && !hasYielded && attempts < 2 {
+            } catch let urlErr as URLError where (urlErr.code == .networkConnectionLost || urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut) && attempts < 2 {
                 attempts += 1
                 try Task.checkCancellation()
                 try? await Task.sleep(nanoseconds: 150_000_000)
                 continue
             }
-        }
-    }
-
-
-    private func parseOpenAISSE(
-        bytes: URLSession.AsyncBytes,
-        continuation: AsyncThrowingStream<AnthropicStreamEvent, Error>.Continuation,
-        onYield: () -> Void
-    ) async throws {
-        var pendingToolCalls: [Int: (id: String, name: String, jsonAcc: String)] = [:]
-
-        for try await line in bytes.lines {
-            try Task.checkCancellation()
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("data: ") else { continue }
-            let payload = String(trimmed.dropFirst(6))
-            if payload == "[DONE]" { break }
-
-            guard let data = payload.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let firstChoice = choices.first,
-                  let delta = firstChoice["delta"] as? [String: Any]
-            else { continue }
-
-            if let reasoning = delta["reasoning_content"] as? String, !reasoning.isEmpty {
-                onYield()
-                continuation.yield(.textDelta(reasoning))
-            } else if let content = delta["content"] as? String, !content.isEmpty {
-                onYield()
-                continuation.yield(.textDelta(content))
-            }
-
-            if let toolCalls = delta["tool_calls"] as? [[String: Any]] {
-                for tc in toolCalls {
-                    let index = tc["index"] as? Int ?? 0
-                    let id = tc["id"] as? String ?? pendingToolCalls[index]?.id ?? "call_\(index)"
-                    let funcObj = tc["function"] as? [String: Any] ?? [:]
-                    let name = funcObj["name"] as? String ?? pendingToolCalls[index]?.name ?? ""
-                    let argsChunk = funcObj["arguments"] as? String ?? ""
-
-                    let existing = pendingToolCalls[index] ?? (id: id, name: name, jsonAcc: "")
-                    pendingToolCalls[index] = (
-                        id: id.isEmpty ? existing.id : id,
-                        name: name.isEmpty ? existing.name : name,
-                        jsonAcc: existing.jsonAcc + argsChunk
-                    )
-                }
-            }
-
-            if let finishReason = firstChoice["finish_reason"] as? String {
-                if finishReason == "tool_calls" || finishReason == "function_call" {
-                    onYield()
-                    for (_, callData) in pendingToolCalls {
-                        continuation.yield(.toolUseComplete(id: callData.id, name: callData.name, inputJSON: callData.jsonAcc))
-                    }
-                    pendingToolCalls.removeAll()
-                    continuation.yield(.messageStop(stopReason: .toolUse))
-                } else if finishReason == "stop" {
-                    onYield()
-                    continuation.yield(.messageStop(stopReason: .endTurn))
-                }
-            }
-        }
-
-        for (_, callData) in pendingToolCalls {
-            onYield()
-            continuation.yield(.toolUseComplete(id: callData.id, name: callData.name, inputJSON: callData.jsonAcc))
         }
     }
 }
