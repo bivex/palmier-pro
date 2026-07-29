@@ -54,7 +54,10 @@ final class ModelCatalog {
     }
 
     private func startSubscription() {
-        guard let client = AccountService.shared.convex else { return }
+        guard let client = AccountService.shared.convex else {
+            applyDefaults()
+            return
+        }
 
         subscription = client
             .subscribe(
@@ -79,7 +82,9 @@ final class ModelCatalog {
     private func handleFailure(_ err: ClientError) {
         failureCount += 1
         lastError = err.localizedDescription
-        // First failure goes to Sentry; retries only log locally.
+        if !isLoaded {
+            applyDefaults()
+        }
         if failureCount == 1 {
             Log.generation.error("ModelCatalog subscription failed: \(err.localizedDescription)")
         } else {
@@ -92,6 +97,91 @@ final class ModelCatalog {
             guard !Task.isCancelled else { return }
             self?.startSubscription()
         }
+    }
+
+    private func applyDefaults() {
+        let jsonStr = """
+        [
+          {
+            "id": "seedance-2-fast",
+            "kind": "video",
+            "displayName": "Seedance 2.0 Fast",
+            "providerName": "ByteDance",
+            "description": "Fast video generation model",
+            "allowedEndpoints": ["video/generate"],
+            "responseShape": { "type": "url" },
+            "paidOnly": false,
+            "creditsPerSecond": { "720p": 1.0 },
+            "uiCapabilities": {
+              "kind": "video",
+              "durations": [5, 10],
+              "resolutions": ["720p", "1080p"],
+              "aspectRatios": ["16:9", "9:16", "1:1"],
+              "supportsPrompt": true,
+              "supportsFirstFrame": true,
+              "supportsLastFrame": true,
+              "maxReferenceImages": 2,
+              "maxReferenceVideos": 1,
+              "maxReferenceAudios": 0,
+              "framesAndReferencesExclusive": false,
+              "referenceTagNoun": "Reference",
+              "requiresSourceVideo": false,
+              "requiresReferenceImage": false
+            }
+          },
+          {
+            "id": "kling-v3",
+            "kind": "video",
+            "displayName": "Kling v3",
+            "providerName": "Kuaishou",
+            "description": "High-quality video generation model",
+            "allowedEndpoints": ["video/generate"],
+            "responseShape": { "type": "url" },
+            "paidOnly": true,
+            "creditsPerSecond": { "1080p": 2.0 },
+            "uiCapabilities": {
+              "kind": "video",
+              "durations": [5, 10],
+              "resolutions": ["1080p"],
+              "aspectRatios": ["16:9", "9:16"],
+              "supportsPrompt": true,
+              "supportsFirstFrame": true,
+              "supportsLastFrame": true,
+              "maxReferenceImages": 3,
+              "maxReferenceVideos": 0,
+              "maxReferenceAudios": 0,
+              "framesAndReferencesExclusive": false,
+              "referenceTagNoun": "Reference",
+              "requiresSourceVideo": false,
+              "requiresReferenceImage": false
+            }
+          },
+          {
+            "id": "nano-banana-pro",
+            "kind": "image",
+            "displayName": "Nano Banana Pro",
+            "providerName": "Midjourney",
+            "description": "SOTA image generation model",
+            "allowedEndpoints": ["image/generate"],
+            "responseShape": { "type": "url" },
+            "paidOnly": false,
+            "uiCapabilities": {
+              "kind": "image",
+              "aspectRatios": ["1:1", "16:9", "9:16"],
+              "resolutions": ["1024x1024"],
+              "supportsPrompt": true,
+              "maxReferenceImages": 2,
+              "minPromptLength": 1
+            }
+          }
+        ]
+        """
+        guard let data = jsonStr.data(using: .utf8),
+              let entries = try? JSONDecoder().decode([CatalogEntry].self, from: data) else {
+            self.isLoaded = true
+            return
+        }
+        apply(entries)
     }
 
     private func apply(_ entries: [CatalogEntry]) {
