@@ -12,6 +12,18 @@ struct ModelsPane: View {
     @State private var whisperProgress: Double = 0.0
     @State private var downloadError: String?
 
+    @State private var googleKeyDraft = ""
+    @State private var hasGoogleKey = false
+    @State private var maskedGoogleKey = ""
+
+    @State private var falKeyDraft = ""
+    @State private var hasFalKey = false
+    @State private var maskedFalKey = ""
+
+    @State private var klingKeyDraft = ""
+    @State private var hasKlingKey = false
+    @State private var maskedKlingKey = ""
+
     private struct Row: Identifiable {
         let id: String
         let displayName: String
@@ -24,13 +36,14 @@ struct ModelsPane: View {
         let rows: [Row]
     }
 
-    private func isLocked(_ row: Row) -> Bool { row.paidOnly && !account.isPaid }
+    private func isLocked(_ row: Row) -> Bool {
+        row.paidOnly && !account.isPaid && !DirectKeyStore.hasKey(for: row.id)
+    }
 
     private var sections: [Section] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         func prepare(_ rows: [Row]) -> [Row] {
             let matched = q.isEmpty ? rows : rows.filter { $0.displayName.lowercased().contains(q) }
-            // Available models first, locked (paid-only) ones grouped at the bottom.
             return matched.filter { !isLocked($0) } + matched.filter { isLocked($0) }
         }
         return [
@@ -47,6 +60,8 @@ struct ModelsPane: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             searchBar
 
+            directProviderKeysSection
+
             onDeviceModelsSection
 
             if sections.isEmpty {
@@ -60,6 +75,139 @@ struct ModelsPane: View {
                 }
             }
         }
+        .onAppear(perform: refreshKeys)
+    }
+
+    private var directProviderKeysSection: some View {
+        SettingsSection(title: "Direct API Keys (BYOK - Bring Your Own Key)") {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+                Text("Use your own API keys for Google Gemini/Imagen, Fal.ai (Kling, Seedance, Veo), or Kling directly without requiring a Palmier subscription.")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+
+                keyInputRow(
+                    label: "Google AI API Key (Gemini / Imagen 3)",
+                    placeholder: "AIzaSy...",
+                    hasKey: hasGoogleKey,
+                    maskedKey: maskedGoogleKey,
+                    draft: $googleKeyDraft,
+                    onSave: {
+                        let trimmed = googleKeyDraft.trimmingCharacters(in: .whitespaces)
+                        if !trimmed.isEmpty { GoogleAIKeychain.save(trimmed); googleKeyDraft = ""; refreshKeys() }
+                    },
+                    onRemove: { GoogleAIKeychain.delete(); refreshKeys() }
+                )
+
+                Divider().overlay(AppTheme.Border.subtleColor)
+
+                keyInputRow(
+                    label: "Fal.ai API Key (Kling, Seedance, Flux, Veo)",
+                    placeholder: "fal_key_...",
+                    hasKey: hasFalKey,
+                    maskedKey: maskedFalKey,
+                    draft: $falKeyDraft,
+                    onSave: {
+                        let trimmed = falKeyDraft.trimmingCharacters(in: .whitespaces)
+                        if !trimmed.isEmpty { FalAIKeychain.save(trimmed); falKeyDraft = ""; refreshKeys() }
+                    },
+                    onRemove: { FalAIKeychain.delete(); refreshKeys() }
+                )
+
+                Divider().overlay(AppTheme.Border.subtleColor)
+
+                keyInputRow(
+                    label: "Kling API Key (Direct Kling AI)",
+                    placeholder: "kling_...",
+                    hasKey: hasKlingKey,
+                    maskedKey: maskedKlingKey,
+                    draft: $klingKeyDraft,
+                    onSave: {
+                        let trimmed = klingKeyDraft.trimmingCharacters(in: .whitespaces)
+                        if !trimmed.isEmpty { KlingKeychain.save(trimmed); klingKeyDraft = ""; refreshKeys() }
+                    },
+                    onRemove: { KlingKeychain.delete(); refreshKeys() }
+                )
+            }
+            .padding(.vertical, AppTheme.Spacing.xs)
+        }
+    }
+
+    private func keyInputRow(
+        label: String,
+        placeholder: String,
+        hasKey: Bool,
+        maskedKey: String,
+        draft: Binding<String>,
+        onSave: @escaping () -> Void,
+        onRemove: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                Text(label)
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    SecureField(hasKey ? maskedKey : placeholder, text: draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                        .onSubmit(onSave)
+                        .padding(.horizontal, AppTheme.Spacing.sm)
+                        .padding(.vertical, AppTheme.Spacing.xs)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                                .fill(Color.black.opacity(AppTheme.Opacity.muted))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+                        )
+
+                    let trimmed = draft.wrappedValue.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty {
+                        Button("Save", action: onSave)
+                            .buttonStyle(.capsule(.prominent, size: .regular))
+                    } else if hasKey {
+                        Button(action: onRemove) {
+                            Image(systemName: "trash")
+                                .font(.system(size: AppTheme.FontSize.md))
+                                .foregroundStyle(AppTheme.Text.secondaryColor)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func refreshKeys() {
+        if let k = GoogleAIKeychain.load(), !k.isEmpty {
+            hasGoogleKey = true
+            maskedGoogleKey = mask(k)
+        } else {
+            hasGoogleKey = false
+            maskedGoogleKey = ""
+        }
+        if let k = FalAIKeychain.load(), !k.isEmpty {
+            hasFalKey = true
+            maskedFalKey = mask(k)
+        } else {
+            hasFalKey = false
+            maskedFalKey = ""
+        }
+        if let k = KlingKeychain.load(), !k.isEmpty {
+            hasKlingKey = true
+            maskedKlingKey = mask(k)
+        } else {
+            hasKlingKey = false
+            maskedKlingKey = ""
+        }
+    }
+
+    private func mask(_ key: String) -> String {
+        guard key.count > 8 else { return "••••••••" }
+        return "\(key.prefix(4))••••••••\(key.suffix(4))"
     }
 
     private var onDeviceModelsSection: some View {
