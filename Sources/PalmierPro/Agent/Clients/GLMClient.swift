@@ -64,7 +64,9 @@ private final class GLMDataStreamDelegate: NSObject, URLSessionDataDelegate, @un
         req.httpBody = nil
         let task = taskSession.uploadTask(with: req, from: bodyData)
         self.task = task
+        Log.agent.notice("GLMClient uploadTask created taskID=\(task.taskIdentifier) bodyBytes=\(bodyData.count)")
         task.resume()
+        Log.agent.notice("GLMClient uploadTask resumed taskID=\(task.taskIdentifier)")
     }
 
     func cancel() {
@@ -76,12 +78,17 @@ private final class GLMDataStreamDelegate: NSObject, URLSessionDataDelegate, @un
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         if let http = response as? HTTPURLResponse {
             httpResponse = http
+            Log.agent.notice("GLMClient uploadTask didReceiveResponse status=\(http.statusCode) headers=\(http.allHeaderFields)")
+        } else {
+            Log.agent.notice("GLMClient uploadTask didReceiveResponse (non-HTTP)")
         }
         completionHandler(.allow)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        let totalBefore = buffer.count
         buffer.append(data)
+        Log.agent.debug("GLMClient uploadTask didReceiveData chunk=\(data.count) bufferTotal=\(buffer.count) prevTotal=\(totalBefore)")
         if let http = httpResponse, http.statusCode >= 400 {
             return
         }
@@ -95,6 +102,14 @@ private final class GLMDataStreamDelegate: NSObject, URLSessionDataDelegate, @un
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let receivedResponse = httpResponse != nil
+        let statusCode = httpResponse?.statusCode ?? 0
+        if let error {
+            let urlErr = error as? URLError
+            Log.agent.error("GLMClient uploadTask didComplete WITH ERROR taskID=\(task.taskIdentifier) code=\(urlErr?.code.rawValue ?? -9999) domain=\((error as NSError).domain) desc=\(error.localizedDescription) receivedResponse=\(receivedResponse) status=\(statusCode) bufferBytes=\(buffer.count) bytesReceived=\(task.countOfBytesReceived) bytesSent=\(task.countOfBytesSent) expectedToSend=\(task.countOfBytesExpectedToSend)")
+        } else {
+            Log.agent.notice("GLMClient uploadTask didComplete OK taskID=\(task.taskIdentifier) status=\(statusCode) bufferBytes=\(buffer.count)")
+        }
         defer {
             self.activeSession?.finishTasksAndInvalidate()
             self.activeSession = nil
