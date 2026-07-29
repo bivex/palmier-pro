@@ -101,12 +101,12 @@ enum AgentUsageLog {
 // MARK: - Shared SSE parser
 
 enum AnthropicSSE {
-    static func parse(
-        bytes: URLSession.AsyncBytes,
+    static func parse<S: AsyncSequence>(
+        lines: S,
         continuation: AsyncThrowingStream<AnthropicStreamEvent, Error>.Continuation
-    ) async throws {
+    ) async throws where S.Element == String {
         var pendingTools: [Int: (id: String, name: String, json: String)] = [:]
-        for try await line in bytes.lines {
+        for try await line in lines {
             try Task.checkCancellation()
             guard line.hasPrefix("data:") else { continue }
             let payload = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
@@ -170,6 +170,13 @@ enum AnthropicSSE {
             default: break
             }
         }
+    }
+
+    static func parse(
+        bytes: URLSession.AsyncBytes,
+        continuation: AsyncThrowingStream<AnthropicStreamEvent, Error>.Continuation
+    ) async throws {
+        try await parse(lines: bytes.lines, continuation: continuation)
     }
 }
 

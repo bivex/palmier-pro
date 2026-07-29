@@ -45,6 +45,54 @@ private final class GLMStreamingSession: @unchecked Sendable {
     }()
 }
 
+private final class GLMDataStreamDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let continuation: AsyncThrowingStream<String, Error>.Continuation
+    private var buffer = Data()
+    private var httpResponse: HTTPURLResponse?
+
+    init(continuation: AsyncThrowingStream<String, Error>.Continuation) {
+        self.continuation = continuation
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        if let http = response as? HTTPURLResponse {
+            httpResponse = http
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        buffer.append(data)
+        if let http = httpResponse, http.statusCode >= 400 {
+            return
+        }
+        while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+            let lineData = buffer.subdata(in: 0..<newlineIndex)
+            buffer.removeSubrange(0...newlineIndex)
+            if let line = String(data: lineData, encoding: .utf8)?.trimmingCharacters(in: .newlines) {
+                continuation.yield(line)
+            }
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let http = httpResponse, http.statusCode >= 400 {
+            let errBody = String(data: buffer, encoding: .utf8) ?? ""
+            Log.agent.error("GLMClient HTTP error \(http.statusCode): \(errBody.prefix(300))")
+            continuation.finish(throwing: AnthropicClientError.httpError(status: http.statusCode, body: errBody))
+            return
+        }
+        if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8)?.trimmingCharacters(in: .newlines), !line.isEmpty {
+            continuation.yield(line)
+        }
+        if let error {
+            continuation.finish(throwing: error)
+        } else {
+            continuation.finish()
+        }
+    }
+}
+
 /// Agent client for Zhipu AI GLM (GLM-5.2 / GLM-4.5 / GLM-4-Plus) via Z.AI Anthropic proxy endpoint
 struct GLMClient: AgentClient {
     let apiKey: String
@@ -113,22 +161,19 @@ struct GLMClient: AgentClient {
         var activeSession = session
         while true {
             do {
-                Log.agent.notice("GLMClient sending HTTP POST request (attempt \(attempts + 1))...")
-                let (bytes, response) = try await activeSession.bytes(for: request)
-                if let http = response as? HTTPURLResponse {
-                    Log.agent.notice("GLMClient received response status=\(http.statusCode)")
-                    if http.statusCode >= 400 {
-                        var errBody = ""
-                        do {
-                            for try await line in bytes.lines { errBody += line + "\n" }
-                        } catch {}
-                        Log.agent.error("GLMClient HTTP error \(http.statusCode): \(errBody.prefix(300))")
-                        throw AnthropicClientError.httpError(status: http.statusCode, body: errBody)
+                Log.agent.notice("GLMClient sending HTTP POST request via URLSessionDataTask (attempt \(attempts + 1))...")
+                let lineStream = AsyncThrowingStream<String, Error> { streamContinuation in
+                    let delegate = GLMDataStreamDelegate(continuation: streamContinuation)
+                    let taskSession = URLSession(configuration: activeSession.configuration, delegate: delegate, delegateQueue: nil)
+                    let task = taskSession.dataTask(with: request)
+                    task.resume()
+                    streamContinuation.onTermination = { _ in
+                        task.cancel()
+                        taskSession.finishTasksAndInvalidate()
                     }
                 }
 
-                Log.agent.notice("GLMClient starting SSE line parsing...")
-                try await AnthropicSSE.parse(bytes: bytes, continuation: continuation)
+                try await AnthropicSSE.parse(lines: lineStream, continuation: continuation)
                 Log.agent.notice("GLMClient stream completed successfully")
                 break
             } catch let urlErr as URLError where (urlErr.code == .networkConnectionLost || urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut) && attempts < 2 {
