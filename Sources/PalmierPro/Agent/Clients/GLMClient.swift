@@ -34,6 +34,19 @@ enum GLMKeychain {
     }
 }
 
+private final class GLMStreamingSession: @unchecked Sendable {
+    static let defaultSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForResource = 600
+        config.httpShouldUsePipelining = false
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCache = nil
+        return URLSession(configuration: config)
+    }()
+}
+
 /// Agent client for Zhipu AI GLM (GLM-5.2 / GLM-4.5 / GLM-4-Plus) via Z.AI Anthropic proxy endpoint
 struct GLMClient: AgentClient {
     let apiKey: String
@@ -43,7 +56,7 @@ struct GLMClient: AgentClient {
 
     private static let endpoint = URL(string: "https://api.z.ai/api/anthropic/v1/messages")!
 
-    init(apiKey: String, modelName: String = "glm-5.2", session: URLSession = .shared) {
+    init(apiKey: String, modelName: String = "glm-5.2", session: URLSession = GLMStreamingSession.defaultSession) {
         self.apiKey = apiKey
         self.modelName = modelName
         self.session = session
@@ -77,13 +90,15 @@ struct GLMClient: AgentClient {
 
         let modelEnum = AnthropicModel(rawValue: modelName) ?? .glm52
 
-        var request = URLRequest(url: Self.endpoint)
+        var request = URLRequest(url: Self.endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 300)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue("text/event-stream", forHTTPHeaderField: "accept")
+        request.setValue("no-cache", forHTTPHeaderField: "cache-control")
+        request.setValue("no", forHTTPHeaderField: "x-accel-buffering")
         request.httpBody = try JSONSerialization.data(
             withJSONObject: AnthropicRequestBody.build(
                 model: modelEnum, maxTokens: maxTokens, system: system, tools: tools, messages: messages
