@@ -123,22 +123,35 @@ struct GLMClient: AgentClient {
         request.setValue("text/event-stream", forHTTPHeaderField: "accept")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (bytes, response) = try await session.bytes(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
-            var errBody = ""
+        var attempts = 0
+        while true {
+            var hasYielded = false
             do {
-                for try await line in bytes.lines { errBody += line + "\n" }
-            } catch {}
-            throw AnthropicClientError.httpError(status: http.statusCode, body: errBody)
-        }
+                let (bytes, response) = try await session.bytes(for: request)
+                if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+                    var errBody = ""
+                    do {
+                        for try await line in bytes.lines { errBody += line + "\n" }
+                    } catch {}
+                    throw AnthropicClientError.httpError(status: http.statusCode, body: errBody)
+                }
 
-        try await parseOpenAISSE(bytes: bytes, continuation: continuation)
+                try await parseOpenAISSE(bytes: bytes, continuation: continuation, onYield: { hasYielded = true })
+                break
+            } catch let urlErr as URLError where (urlErr.code == .networkConnectionLost || urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut) && !hasYielded && attempts < 2 {
+                attempts += 1
+                try Task.checkCancellation()
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                continue
+            }
+        }
     }
 
 
     private func parseOpenAISSE(
         bytes: URLSession.AsyncBytes,
-        continuation: AsyncThrowingStream<AnthropicStreamEvent, Error>.Continuation
+        continuation: AsyncThrowingStream<AnthropicStreamEvent, Error>.Continuation,
+        onYield: () -> Void
     ) async throws {
         var pendingToolCalls: [Int: (id: String, name: String, jsonAcc: String)] = [:]
 
@@ -157,8 +170,10 @@ struct GLMClient: AgentClient {
             else { continue }
 
             if let reasoning = delta["reasoning_content"] as? String, !reasoning.isEmpty {
+                onYield()
                 continuation.yield(.textDelta(reasoning))
             } else if let content = delta["content"] as? String, !content.isEmpty {
+                onYield()
                 continuation.yield(.textDelta(content))
             }
 
@@ -181,18 +196,21 @@ struct GLMClient: AgentClient {
 
             if let finishReason = firstChoice["finish_reason"] as? String {
                 if finishReason == "tool_calls" || finishReason == "function_call" {
+                    onYield()
                     for (_, callData) in pendingToolCalls {
                         continuation.yield(.toolUseComplete(id: callData.id, name: callData.name, inputJSON: callData.jsonAcc))
                     }
                     pendingToolCalls.removeAll()
                     continuation.yield(.messageStop(stopReason: .toolUse))
                 } else if finishReason == "stop" {
+                    onYield()
                     continuation.yield(.messageStop(stopReason: .endTurn))
                 }
             }
         }
 
         for (_, callData) in pendingToolCalls {
+            onYield()
             continuation.yield(.toolUseComplete(id: callData.id, name: callData.name, inputJSON: callData.jsonAcc))
         }
     }
