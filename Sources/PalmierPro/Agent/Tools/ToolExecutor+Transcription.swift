@@ -390,6 +390,12 @@ extension ToolExecutor {
                                 preferredLocale: nil,
                                 projectId: projectId
                             )))
+                        case .mlxWhisper:
+                            let lang = context.preferredLocale.flatMap { CloudTranscription.languageIdentifier($0) }
+                            return (url, .success(try await MLXWhisperTranscriber.transcribe(
+                                fileURL: url,
+                                language: lang
+                            ).offsetting(by: rangesByURL[url]?.lowerBound ?? 0)))
                         }
                     } catch {
                         return (url, .failure(error))
