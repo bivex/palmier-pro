@@ -162,10 +162,15 @@ struct AgentPanelView: View {
     @ViewBuilder
     private var byokIndicator: some View {
         if service.hasApiKey {
-            Text("using API key")
+            let label = service.hasGLMKey && service.effectiveModel.isGLM
+                ? "using GLM key"
+                : "using API key"
+            Text(label)
                 .font(.system(size: AppTheme.FontSize.xs).italic())
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .help("Streaming through your Anthropic API key (BYOK)")
+                .help(service.hasGLMKey && service.effectiveModel.isGLM
+                      ? "Streaming through your Zhipu AI GLM API key"
+                      : "Streaming through your Anthropic API key (BYOK)")
         }
     }
 

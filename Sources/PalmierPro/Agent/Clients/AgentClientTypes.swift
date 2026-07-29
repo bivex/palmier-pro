@@ -6,13 +6,21 @@ enum AnthropicModel: String, CaseIterable, Sendable {
     case sonnet5 = "claude-sonnet-5"
     case opus48 = "claude-opus-4-8"
     case haiku45 = "claude-haiku-4-5-20251001"
+    case glm52 = "glm-5.2"
+    case glm45 = "glm-4.5"
 
     var displayName: String {
         switch self {
         case .sonnet5: "Sonnet 5"
         case .opus48: "Opus 4.8"
         case .haiku45: "Haiku 4.5"
+        case .glm52: "GLM-5.2"
+        case .glm45: "GLM-4.5"
         }
+    }
+
+    var isGLM: Bool {
+        self == .glm52 || self == .glm45
     }
 
     var requestExtras: [String: Any] {

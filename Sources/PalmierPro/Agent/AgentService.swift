@@ -53,18 +53,27 @@ final class AgentService {
     }
 
     var availableModels: [AnthropicModel] {
-        if hasApiKey { return AnthropicModel.allCases }
+        if hasGLMKey {
+            var models: [AnthropicModel] = [.glm52, .glm45]
+            if !apiKey.isEmpty { models += [.sonnet5, .opus48, .haiku45] }
+            return models
+        }
+        if !apiKey.isEmpty || hasGoogleKey { return [.sonnet5, .opus48, .haiku45] }
         return [.sonnet5]
     }
 
     private func selectClient() -> (any AgentClient)? {
-        if let glmKey = GLMKeychain.load(), !glmKey.isEmpty {
-            return GLMClient(apiKey: glmKey, modelName: "glm-5.2")
+        let chosen = effectiveModel
+        if chosen.isGLM, let glmKey = GLMKeychain.load(), !glmKey.isEmpty {
+            return GLMClient(apiKey: glmKey, modelName: chosen.rawValue)
+        }
+        if let glmKey = GLMKeychain.load(), !glmKey.isEmpty, apiKey.isEmpty {
+            // default to GLM when only GLM key is present
+            return GLMClient(apiKey: glmKey, modelName: chosen.isGLM ? chosen.rawValue : AnthropicModel.glm52.rawValue)
         }
         if let googleKey = GoogleAIKeychain.load(), !googleKey.isEmpty {
             return GoogleAIClient(apiKey: googleKey, modelName: "gemini-2.0-flash")
         }
-        let chosen = effectiveModel
         if !apiKey.isEmpty { return AnthropicClient(apiKey: apiKey, model: chosen) }
         if AccountService.shared.isSignedIn {
             return PalmierClient(model: chosen)
