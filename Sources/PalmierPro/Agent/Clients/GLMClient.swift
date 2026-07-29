@@ -137,7 +137,7 @@ struct GLMClient: AgentClient {
         messages: [AnthropicMessage]
     ) -> AsyncThrowingStream<AnthropicStreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            let task = Task {
+            let task = Task.detached(priority: .userInitiated) {
                 do {
                     try await run(system: system, tools: tools, messages: messages, continuation: continuation)
                     continuation.finish()
