@@ -106,13 +106,16 @@ struct GLMClient: AgentClient {
             "messages": openAIMessages,
             "stream": true,
             "max_tokens": maxTokens,
-            "temperature": 0.2
+            "temperature": 0.6,
+            "thinking": ["type": "enabled"],
+            "reasoning_effort": "max"
         ]
         if !openAITools.isEmpty {
             body["tools"] = openAITools
         }
 
-        var request = URLRequest(url: Self.endpoint)
+        let endpointURL = apiKey.starts(with: "z") ? Self.zaiEndpoint : Self.endpoint
+        var request = URLRequest(url: endpointURL)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
@@ -127,6 +130,8 @@ struct GLMClient: AgentClient {
 
         try await parseOpenAISSE(bytes: bytes, continuation: continuation)
     }
+
+    private static let zaiEndpoint = URL(string: "https://api.z.ai/api/paas/v4/chat/completions")!
 
     private func parseOpenAISSE(
         bytes: URLSession.AsyncBytes,
@@ -147,7 +152,9 @@ struct GLMClient: AgentClient {
                   let delta = firstChoice["delta"] as? [String: Any]
             else { continue }
 
-            if let content = delta["content"] as? String, !content.isEmpty {
+            if let reasoning = delta["reasoning_content"] as? String, !reasoning.isEmpty {
+                continuation.yield(.textDelta(reasoning))
+            } else if let content = delta["content"] as? String, !content.isEmpty {
                 continuation.yield(.textDelta(content))
             }
 
