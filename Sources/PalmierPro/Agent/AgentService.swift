@@ -374,15 +374,20 @@ final class AgentService {
 
     private func runLoop() async {
         guard let client = selectClient() else {
+            Log.agent.error("AgentService selectClient failed: no client available")
             streamError = .upstream("No backend available.")
             return
         }
+        Log.agent.notice("AgentService runLoop started with client=\(type(of: client))")
         await SkillStore.shared.reloadInBackground()
         let tools = ToolDefinitions.inAppAgent.map {
             AnthropicToolSchema(name: $0.name.rawValue, description: $0.description, inputSchema: $0.inputSchema)
         }
 
+        var turn = 0
         loop: while !Task.isCancelled {
+            turn += 1
+            Log.agent.notice("AgentService starting turn \(turn)")
             resolveOrphanToolUses()
             let apiMsgs = await apiMessages()
             let assistant = AgentMessage(role: .assistant, blocks: [])
@@ -404,25 +409,32 @@ final class AgentService {
                     case .textDelta(let chunk):
                         appendTextDelta(chunk, toAssistant: assistantID)
                     case .toolUseComplete(let id, let name, let inputJSON):
+                        Log.agent.notice("AgentService tool call: name=\(name) id=\(id)")
                         appendToolUse(id: id, name: name, inputJSON: inputJSON, toAssistant: assistantID)
                     case .messageStop(let reason):
+                        Log.agent.notice("AgentService message stop reason=\(reason.rawValue)")
                         stopReason = reason
                     }
                 }
 
                 if stopReason == .toolUse {
+                    Log.agent.notice("AgentService executing pending tool calls...")
                     await runPendingToolUses(assistantID: assistantID)
                     continue loop
                 }
+                Log.agent.notice("AgentService runLoop completed turn \(turn)")
                 break loop
             } catch is CancellationError {
+                Log.agent.notice("AgentService stream cancelled")
                 dropEmptyAssistantTurn(id: assistantID)
                 break loop
             } catch let err as PalmierClientError {
+                Log.agent.error("AgentService PalmierClientError: \(err.localizedDescription)")
                 dropEmptyAssistantTurn(id: assistantID)
                 streamError = err
                 break loop
             } catch {
+                Log.agent.error("AgentService stream failed with error: \(error.localizedDescription)")
                 dropEmptyAssistantTurn(id: assistantID)
                 streamError = .upstream(error.localizedDescription)
                 break loop

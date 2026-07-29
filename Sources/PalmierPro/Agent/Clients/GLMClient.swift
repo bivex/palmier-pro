@@ -85,9 +85,13 @@ struct GLMClient: AgentClient {
         messages: [AnthropicMessage],
         continuation: AsyncThrowingStream<AnthropicStreamEvent, Error>.Continuation
     ) async throws {
-        guard !apiKey.isEmpty else { throw AnthropicClientError.missingAPIKey }
+        guard !apiKey.isEmpty else {
+            Log.agent.error("GLMClient error: missing API key")
+            throw AnthropicClientError.missingAPIKey
+        }
 
         let modelEnum = AnthropicModel(rawValue: modelName) ?? .glm52
+        Log.agent.notice("GLMClient connecting endpoint=\(Self.endpoint.absoluteString) model=\(modelEnum.rawValue) messagesCount=\(messages.count)")
 
         var request = URLRequest(url: Self.endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 300)
         request.httpMethod = "POST"
@@ -109,21 +113,30 @@ struct GLMClient: AgentClient {
         while true {
             do {
                 let (bytes, response) = try await session.bytes(for: request)
-                if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
-                    var errBody = ""
-                    do {
-                        for try await line in bytes.lines { errBody += line + "\n" }
-                    } catch {}
-                    throw AnthropicClientError.httpError(status: http.statusCode, body: errBody)
+                if let http = response as? HTTPURLResponse {
+                    Log.agent.notice("GLMClient received response status=\(http.statusCode)")
+                    if http.statusCode >= 400 {
+                        var errBody = ""
+                        do {
+                            for try await line in bytes.lines { errBody += line + "\n" }
+                        } catch {}
+                        Log.agent.error("GLMClient HTTP error \(http.statusCode): \(errBody.prefix(300))")
+                        throw AnthropicClientError.httpError(status: http.statusCode, body: errBody)
+                    }
                 }
 
                 try await AnthropicSSE.parse(bytes: bytes, continuation: continuation)
+                Log.agent.notice("GLMClient stream completed successfully")
                 break
             } catch let urlErr as URLError where (urlErr.code == .networkConnectionLost || urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut) && attempts < 2 {
                 attempts += 1
+                Log.agent.warning("GLMClient network error (\(urlErr.localizedDescription)), retrying attempt \(attempts)/2...")
                 try Task.checkCancellation()
                 try? await Task.sleep(nanoseconds: 150_000_000)
                 continue
+            } catch {
+                Log.agent.error("GLMClient stream failed with error: \(error.localizedDescription)")
+                throw error
             }
         }
     }
