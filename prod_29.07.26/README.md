@@ -73,3 +73,10 @@
 | **MCP Сервер** | Swift / HTTP Server | Локально (`:19789`) | GPLv3 (Open Source) |
 | **Чат-агент** | Swift / `PalmierPro/Agent` | Локально на Mac | GPLv3 (Open Source) |
 | **Генерация ИИ (Бэкенд)** | Convex / Cloud API | Облачный сервис Palmier | Closed Source / Подписка |
+
+---
+
+## 5. Дополнительные документы
+
+* [**COST_OPTIMIZATION_AUDIT.md**](COST_OPTIMIZATION_AUDIT.md) — Полный аудит платных сторонних сервисов, зависимостей и план миграции на self-hosted альтернативы (снижение затрат на 75–85%).
+
