@@ -6,6 +6,11 @@ struct ModelsPane: View {
     private var account = AccountService.shared
 
     @State private var query = ""
+    @State private var isDownloadingSigLIP = false
+    @State private var siglipProgress: Double = 0.0
+    @State private var isDownloadingWhisper = false
+    @State private var whisperProgress: Double = 0.0
+    @State private var downloadError: String?
 
     private struct Row: Identifiable {
         let id: String
@@ -70,9 +75,12 @@ struct ModelsPane: View {
                     name: "SigLIP 2 CoreML (Visual Search)",
                     source: "Hugging Face (palmier-io/siglip2-base-coreml)",
                     size: "355 MB • SHA256 Verified",
-                    statusText: isSigLIPInstalled ? "Downloaded & Ready" : "On Demand",
+                    statusText: isSigLIPInstalled ? "Downloaded & Ready" : (isDownloadingSigLIP ? "\(Int(siglipProgress * 100))%" : "On Demand"),
                     isInstalled: isSigLIPInstalled,
-                    folderURL: siglipFolder
+                    isDownloading: isDownloadingSigLIP,
+                    progress: siglipProgress,
+                    folderURL: siglipFolder,
+                    onDownload: { downloadSigLIP() }
                 )
                 Divider().overlay(AppTheme.Border.subtleColor)
 
@@ -80,9 +88,12 @@ struct ModelsPane: View {
                     name: "Whisper Large V3 Turbo (MLX)",
                     source: "mlx-community/whisper-large-v3-turbo",
                     size: "1.6 GB • Metal / NPU",
-                    statusText: isWhisperMLXAvailable ? "Downloaded & Ready" : "Script Ready",
+                    statusText: isWhisperMLXAvailable ? "Downloaded & Ready" : (isDownloadingWhisper ? "Downloading…" : "Script Ready"),
                     isInstalled: isWhisperMLXAvailable,
-                    folderURL: whisperFolder
+                    isDownloading: isDownloadingWhisper,
+                    progress: whisperProgress,
+                    folderURL: whisperFolder,
+                    onDownload: { downloadWhisper() }
                 )
             }
             .padding(.vertical, AppTheme.Spacing.xs)
@@ -95,7 +106,10 @@ struct ModelsPane: View {
         size: String,
         statusText: String,
         isInstalled: Bool,
-        folderURL: URL? = nil
+        isDownloading: Bool = false,
+        progress: Double = 0.0,
+        folderURL: URL? = nil,
+        onDownload: (() -> Void)? = nil
     ) -> some View {
         HStack(spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
@@ -113,6 +127,18 @@ struct ModelsPane: View {
                     .foregroundStyle(AppTheme.Text.secondaryColor)
             }
             Spacer(minLength: AppTheme.Spacing.lg)
+
+            if !isInstalled && !isDownloading, let onDownload {
+                Button(action: onDownload) {
+                    HStack(spacing: AppTheme.Spacing.xxs) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: AppTheme.FontSize.xs))
+                        Text("Download")
+                            .font(.system(size: AppTheme.FontSize.xs))
+                    }
+                }
+                .buttonStyle(.capsule(.prominent))
+            }
 
             if let folderURL {
                 Button(action: {
@@ -136,11 +162,64 @@ struct ModelsPane: View {
                 .padding(.vertical, AppTheme.Spacing.xxs)
                 .background(
                     Capsule()
-                        .fill(isInstalled ? Color.green.opacity(0.15) : Color.blue.opacity(0.15))
+                        .fill(isInstalled ? Color.green.opacity(0.15) : (isDownloading ? Color.orange.opacity(0.15) : Color.blue.opacity(0.15)))
                 )
-                .foregroundStyle(isInstalled ? Color.green : Color.blue)
+                .foregroundStyle(isInstalled ? Color.green : (isDownloading ? Color.orange : Color.blue))
         }
         .padding(.vertical, AppTheme.Spacing.smMd)
+    }
+
+    private func downloadSigLIP() {
+        guard !isDownloadingSigLIP else { return }
+        isDownloadingSigLIP = true
+        siglipProgress = 0.0
+
+        Task { @MainActor in
+            do {
+                _ = try await ModelDownloader().install(
+                    manifest: SearchIndexConfig.manifest,
+                    baseURL: SearchIndexConfig.baseURL,
+                    progress: { p in
+                        Task { @MainActor in
+                            self.siglipProgress = p
+                        }
+                    }
+                )
+                isDownloadingSigLIP = false
+            } catch {
+                isDownloadingSigLIP = false
+                downloadError = error.localizedDescription
+            }
+        }
+    }
+
+    private func downloadWhisper() {
+        guard !isDownloadingWhisper else { return }
+        isDownloadingWhisper = true
+        whisperProgress = 0.1
+
+        Task { @MainActor in
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    let venvPython = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                        .appendingPathComponent("venv/bin/python3")
+                    let pythonPath = FileManager.default.fileExists(atPath: venvPython.path) ? venvPython.path : "/usr/bin/env"
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: pythonPath)
+                    if pythonPath == "/usr/bin/env" {
+                        process.arguments = ["python3", "-c", "import mlx_whisper; mlx_whisper.load_model('mlx-community/whisper-large-v3-turbo')"]
+                    } else {
+                        process.arguments = ["-c", "import mlx_whisper; mlx_whisper.load_model('mlx-community/whisper-large-v3-turbo')"]
+                    }
+                    try process.run()
+                    process.waitUntilExit()
+                }.value
+                whisperProgress = 1.0
+                isDownloadingWhisper = false
+            } catch {
+                isDownloadingWhisper = false
+            }
+        }
     }
 
     private var searchBar: some View {
