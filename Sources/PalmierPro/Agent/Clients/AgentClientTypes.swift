@@ -188,21 +188,24 @@ enum AnthropicRequestBody {
         maxTokens: Int,
         system: String,
         tools: [AnthropicToolSchema],
-        messages: [AnthropicMessage]
+        messages: [AnthropicMessage],
+        enablePromptCaching: Bool = true
     ) -> [String: Any] {
+        let useCache = enablePromptCaching && !model.isGLM
+
         var toolBlocks: [[String: Any]] = tools.map {
             ["name": $0.name, "description": $0.description, "input_schema": $0.inputSchema]
         }
-        // Prompt-cache boundary covers system + tools.
-        if var last = toolBlocks.popLast() {
+        if useCache, var last = toolBlocks.popLast() {
             last["cache_control"] = ["type": "ephemeral"]
             toolBlocks.append(last)
         }
-        // Prompt-cache the conversation prefix
+
         var messageBlocks: [[String: Any]] = messages.map {
             ["role": $0.role.rawValue, "content": $0.content]
         }
-        if var lastMsg = messageBlocks.popLast(),
+        if useCache,
+           var lastMsg = messageBlocks.popLast(),
            var content = lastMsg["content"] as? [[String: Any]],
            var lastBlock = content.popLast() {
             lastBlock["cache_control"] = ["type": "ephemeral"]
@@ -210,11 +213,16 @@ enum AnthropicRequestBody {
             lastMsg["content"] = content
             messageBlocks.append(lastMsg)
         }
+
+        let systemValue: Any = useCache
+            ? [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]]
+            : system
+
         var body: [String: Any] = [
             "model": model.rawValue,
             "max_tokens": maxTokens,
             "stream": true,
-            "system": [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]],
+            "system": systemValue,
             "messages": messageBlocks,
         ]
         if !toolBlocks.isEmpty { body["tools"] = toolBlocks }
