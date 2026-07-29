@@ -50,23 +50,25 @@ private final class GLMDataStreamDelegate: NSObject, URLSessionDataDelegate, @un
     private var buffer = Data()
     private var httpResponse: HTTPURLResponse?
     private var activeSession: URLSession?
-    private var dataTask: URLSessionDataTask?
+    private var task: URLSessionTask?
 
     init(continuation: AsyncThrowingStream<String, Error>.Continuation) {
         self.continuation = continuation
         super.init()
     }
 
-    func start(request: URLRequest, configuration: URLSessionConfiguration) {
+    func start(request: URLRequest, bodyData: Data, configuration: URLSessionConfiguration) {
         let taskSession = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
         self.activeSession = taskSession
-        let task = taskSession.dataTask(with: request)
-        self.dataTask = task
+        var req = request
+        req.httpBody = nil
+        let task = taskSession.uploadTask(with: req, from: bodyData)
+        self.task = task
         task.resume()
     }
 
     func cancel() {
-        dataTask?.cancel()
+        task?.cancel()
         activeSession?.invalidateAndCancel()
         activeSession = nil
     }
@@ -177,7 +179,6 @@ struct GLMClient: AgentClient {
             ),
             options: [.sortedKeys]
         )
-        request.httpBody = bodyData
         request.setValue("\(bodyData.count)", forHTTPHeaderField: "content-length")
         Log.agent.notice("GLMClient httpBody size=\(bodyData.count) bytes")
 
@@ -185,10 +186,10 @@ struct GLMClient: AgentClient {
         var activeSession = session
         while true {
             do {
-                Log.agent.notice("GLMClient sending HTTP POST request via URLSessionDataTask (attempt \(attempts + 1))...")
+                Log.agent.notice("GLMClient sending HTTP POST request via URLSession uploadTask (attempt \(attempts + 1))...")
                 let lineStream = AsyncThrowingStream<String, Error> { streamContinuation in
                     let delegate = GLMDataStreamDelegate(continuation: streamContinuation)
-                    delegate.start(request: request, configuration: activeSession.configuration)
+                    delegate.start(request: request, bodyData: bodyData, configuration: activeSession.configuration)
                     streamContinuation.onTermination = { _ in
                         delegate.cancel()
                     }
