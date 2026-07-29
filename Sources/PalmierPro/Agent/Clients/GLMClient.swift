@@ -39,12 +39,14 @@ struct GLMClient: AgentClient {
     let apiKey: String
     let modelName: String
     var maxTokens: Int = 8192
+    let session: URLSession
 
     private static let endpoint = URL(string: "https://api.z.ai/api/paas/v4/chat/completions")!
 
-    init(apiKey: String, modelName: String = "glm-5.2") {
+    init(apiKey: String, modelName: String = "glm-5.2", session: URLSession = .shared) {
         self.apiKey = apiKey
         self.modelName = modelName
+        self.session = session
     }
 
     func stream(
@@ -118,12 +120,15 @@ struct GLMClient: AgentClient {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "accept")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
             var errBody = ""
-            for try await line in bytes.lines { errBody += line + "\n" }
+            do {
+                for try await line in bytes.lines { errBody += line + "\n" }
+            } catch {}
             throw AnthropicClientError.httpError(status: http.statusCode, body: errBody)
         }
 
@@ -138,6 +143,7 @@ struct GLMClient: AgentClient {
         var pendingToolCalls: [Int: (id: String, name: String, jsonAcc: String)] = [:]
 
         for try await line in bytes.lines {
+            try Task.checkCancellation()
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix("data: ") else { continue }
             let payload = String(trimmed.dropFirst(6))
