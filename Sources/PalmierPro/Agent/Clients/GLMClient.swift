@@ -8,7 +8,8 @@ enum GLMKeychain {
     private static let account = "glm-api-key"
 
     static func save(_ key: String) {
-        KeychainStore.save(key, account: account)
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        KeychainStore.save(trimmed, account: account)
         NotificationCenter.default.post(name: .glmAPIKeyChanged, object: nil)
     }
 
@@ -25,7 +26,7 @@ enum GLMKeychain {
             return env
         }
         #endif
-        return KeychainStore.load(account: account)
+        return KeychainStore.load(account: account)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func delete() {
@@ -54,7 +55,7 @@ struct GLMClient: AgentClient {
     private static let endpoint = URL(string: "https://api.z.ai/api/anthropic/v1/messages")!
 
     init(apiKey: String, modelName: String = "glm-5.2", session: URLSession = GLMStreamingSession.defaultSession) {
-        self.apiKey = apiKey
+        self.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         self.modelName = modelName
         self.session = session
     }
@@ -89,7 +90,7 @@ struct GLMClient: AgentClient {
         }
 
         let modelEnum = AnthropicModel(rawValue: modelName) ?? .glm52
-        Log.agent.notice("GLMClient connecting endpoint=\(Self.endpoint.absoluteString) model=\(modelEnum.rawValue) messagesCount=\(messages.count)")
+        Log.agent.notice("GLMClient connecting endpoint=\(Self.endpoint.absoluteString) model=\(modelEnum.rawValue) keyPrefix=\(apiKey.prefix(6))... len=\(apiKey.count) messagesCount=\(messages.count)")
 
         var request = URLRequest(url: Self.endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.httpMethod = "POST"
