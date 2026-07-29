@@ -150,12 +150,15 @@ struct GLMClient: AgentClient {
         request.setValue("text/event-stream", forHTTPHeaderField: "accept")
         request.setValue("no-cache", forHTTPHeaderField: "cache-control")
         request.setValue("no", forHTTPHeaderField: "x-accel-buffering")
-        request.httpBody = try JSONSerialization.data(
+        let bodyData = try JSONSerialization.data(
             withJSONObject: AnthropicRequestBody.build(
                 model: modelEnum, maxTokens: maxTokens, system: system, tools: tools, messages: messages
             ),
             options: [.sortedKeys]
         )
+        request.httpBody = bodyData
+        request.setValue("\(bodyData.count)", forHTTPHeaderField: "content-length")
+        Log.agent.notice("GLMClient httpBody size=\(bodyData.count) bytes")
 
         var attempts = 0
         var activeSession = session
