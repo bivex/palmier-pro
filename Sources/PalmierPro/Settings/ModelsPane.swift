@@ -141,6 +141,17 @@ struct ModelsPane: View {
             }
             Spacer(minLength: AppTheme.Spacing.lg)
 
+            if isDownloading {
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    ProgressView(value: max(progress, 0.05))
+                        .progressViewStyle(.linear)
+                        .frame(width: 80)
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.bold))
+                        .foregroundStyle(Color.orange)
+                }
+            }
+
             if !isInstalled && !isDownloading, let onDownload {
                 Button(action: onDownload) {
                     HStack(spacing: AppTheme.Spacing.xxs) {
@@ -185,7 +196,7 @@ struct ModelsPane: View {
     private func downloadSigLIP() {
         guard !isDownloadingSigLIP else { return }
         isDownloadingSigLIP = true
-        siglipProgress = 0.0
+        siglipProgress = 0.01
 
         Task { @MainActor in
             do {
@@ -209,24 +220,46 @@ struct ModelsPane: View {
     private func downloadWhisper() {
         guard !isDownloadingWhisper else { return }
         isDownloadingWhisper = true
-        whisperProgress = 0.1
+        whisperProgress = 0.05
 
         Task { @MainActor in
+            let scriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent("scripts/transcription/download_whisper.py")
+            let venvPython = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent("venv/bin/python3")
+            let pythonURL = FileManager.default.fileExists(atPath: venvPython.path) ? venvPython : URL(fileURLWithPath: "/usr/bin/env")
+
             do {
                 try await Task.detached(priority: .userInitiated) {
-                    let venvPython = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                        .appendingPathComponent("venv/bin/python3")
-                    let pythonPath = FileManager.default.fileExists(atPath: venvPython.path) ? venvPython.path : "/usr/bin/env"
                     let process = Process()
-                    process.executableURL = URL(fileURLWithPath: pythonPath)
-                    if pythonPath == "/usr/bin/env" {
-                        process.arguments = ["python3", "-c", "import mlx_whisper; mlx_whisper.load_model('mlx-community/whisper-large-v3-turbo')"]
+                    process.executableURL = pythonURL
+                    if pythonURL.path == "/usr/bin/env" {
+                        process.arguments = ["python3", scriptURL.path]
                     } else {
-                        process.arguments = ["-c", "import mlx_whisper; mlx_whisper.load_model('mlx-community/whisper-large-v3-turbo')"]
+                        process.arguments = [scriptURL.path]
                     }
+
+                    let pipe = Pipe()
+                    process.standardOutput = pipe
                     try process.run()
+
+                    let reader = pipe.fileHandleForReading
+                    while process.isRunning {
+                        if let data = try? reader.read(upToCount: 256), let str = String(data: data, encoding: .utf8) {
+                            if str.contains("PROGRESS:") {
+                                let parts = str.components(separatedBy: "PROGRESS:")
+                                if let last = parts.last, let val = Double(last.prefix(4)) {
+                                    Task { @MainActor in
+                                        self.whisperProgress = min(max(val, 0.05), 0.99)
+                                    }
+                                }
+                            }
+                        }
+                        try await Task.sleep(nanoseconds: 200_000_000)
+                    }
                     process.waitUntilExit()
                 }.value
+
                 whisperProgress = 1.0
                 isDownloadingWhisper = false
             } catch {
