@@ -42,6 +42,8 @@ struct ModelsPane: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             searchBar
 
+            onDeviceModelsSection
+
             if sections.isEmpty {
                 Text(catalog.isLoaded ? "No models match \"\(query)\"." : "Loading models…")
                     .font(.system(size: AppTheme.FontSize.sm))
@@ -53,6 +55,64 @@ struct ModelsPane: View {
                 }
             }
         }
+    }
+
+    private var onDeviceModelsSection: some View {
+        let isSigLIPInstalled = ModelDownloader.installed(for: SearchIndexConfig.manifest) != nil
+        let isWhisperMLXAvailable = MLXWhisperTranscriber.isAvailable()
+
+        return SettingsSection(title: "On-Device Models (Local Mac)") {
+            VStack(spacing: 0) {
+                onDeviceRow(
+                    name: "SigLIP 2 CoreML (Visual Search)",
+                    source: "Hugging Face (palmier-io/siglip2-base-coreml)",
+                    size: "355 MB • SHA256 Verified",
+                    statusText: isSigLIPInstalled ? "Downloaded & Ready" : "On Demand",
+                    isInstalled: isSigLIPInstalled
+                )
+                Divider().overlay(AppTheme.Border.subtleColor)
+
+                onDeviceRow(
+                    name: "Whisper Large V3 Turbo (MLX)",
+                    source: "mlx-community/whisper-large-v3-turbo",
+                    size: "1.6 GB • Metal / NPU",
+                    statusText: isWhisperMLXAvailable ? "Downloaded & Ready" : "Script Ready",
+                    isInstalled: isWhisperMLXAvailable
+                )
+            }
+            .padding(.vertical, AppTheme.Spacing.xs)
+        }
+    }
+
+    private func onDeviceRow(name: String, source: String, size: String, statusText: String, isInstalled: Bool) -> some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Text(name)
+                        .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.medium))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+
+                    Image(systemName: isInstalled ? "checkmark.circle.fill" : "arrow.down.circle")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(isInstalled ? Color.green : AppTheme.Text.secondaryColor)
+                }
+                Text("\(source) • \(size)")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
+            Spacer(minLength: AppTheme.Spacing.lg)
+
+            Text(statusText)
+                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.xxs)
+                .background(
+                    Capsule()
+                        .fill(isInstalled ? Color.green.opacity(0.15) : Color.blue.opacity(0.15))
+                )
+                .foregroundStyle(isInstalled ? Color.green : Color.blue)
+        }
+        .padding(.vertical, AppTheme.Spacing.smMd)
     }
 
     private var searchBar: some View {
