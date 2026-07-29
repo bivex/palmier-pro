@@ -64,11 +64,11 @@ struct ModelsPane: View {
 
     private var onDeviceModelsSection: some View {
         let isSigLIPInstalled = ModelDownloader.installed(for: SearchIndexConfig.manifest) != nil
-        let isWhisperMLXAvailable = MLXWhisperTranscriber.isAvailable()
+        let isWhisperMLXDownloaded = MLXWhisperTranscriber.isModelDownloaded()
 
         let siglipFolder = ModelDownloader.modelsDir
+        let hfWhisperDir = MLXWhisperTranscriber.modelWeightsURL
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let hfWhisperDir = homeDir.appendingPathComponent(".cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo")
         let hfCacheDir = homeDir.appendingPathComponent(".cache/huggingface/hub")
         let scriptsDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("scripts/transcription")
 
@@ -101,8 +101,8 @@ struct ModelsPane: View {
                     name: "Whisper Large V3 Turbo (MLX)",
                     source: "mlx-community/whisper-large-v3-turbo",
                     size: "1.6 GB • Metal / NPU",
-                    statusText: isWhisperMLXAvailable ? "Downloaded & Ready" : (isDownloadingWhisper ? "Downloading…" : "Script Ready"),
-                    isInstalled: isWhisperMLXAvailable,
+                    statusText: isWhisperMLXDownloaded ? "Downloaded & Ready" : (isDownloadingWhisper ? "Downloading…" : "On Demand"),
+                    isInstalled: isWhisperMLXDownloaded,
                     isDownloading: isDownloadingWhisper,
                     progress: whisperProgress,
                     folderURL: whisperFolder,

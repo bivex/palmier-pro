@@ -25,6 +25,15 @@ enum MLXWhisperTranscriber {
         findScriptURL() != nil
     }
 
+    static var modelWeightsURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo")
+    }
+
+    static func isModelDownloaded() -> Bool {
+        FileManager.default.fileExists(atPath: modelWeightsURL.path)
+    }
+
     static func transcribe(
         fileURL: URL,
         language: String? = nil,
