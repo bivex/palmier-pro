@@ -1,0 +1,40 @@
+# Whisper Transcription Configuration
+
+# Model path (local path or HuggingFace repo)
+model: "mlx-community/whisper-large-v3-turbo"
+
+# Default language (empty = auto-detect)
+# Examples: en, uk, ru, es, de, fr, zh, ja
+language: ""
+
+# Task: transcribe or translate to English
+task: "transcribe"
+
+# Output options
+save_json: false
+json_output: "transcription.json"
+
+# Verbose logging
+verbose: true
+
+# Audio settings
+audio:
+  # Sample rate (Whisper uses 16kHz)
+  sample_rate: 16000
+
+  # Chunk size for long audio files (seconds)
+  chunk_size: 30
+
+# Transcription options
+transcription:
+  # Temperature for sampling (lower = more deterministic)
+  temperature: 0.0
+
+  # Number of candidates to consider
+  best_of: 5
+
+  # Beam size for beam search
+  beam_size: 5
+
+  # Enable word timestamps
+  word_timestamps: true
