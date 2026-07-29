@@ -108,8 +108,11 @@ enum AnthropicSSE {
         var pendingTools: [Int: (id: String, name: String, json: String)] = [:]
         for try await line in bytes.lines {
             try Task.checkCancellation()
-            guard line.hasPrefix("data:"),
-                  let data = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces).data(using: .utf8),
+            guard line.hasPrefix("data:") else { continue }
+            let payload = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { break }
+
+            guard let data = payload.data(using: .utf8),
                   let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let type = event["type"] as? String else { continue }
 
@@ -154,10 +157,14 @@ enum AnthropicSSE {
                     continuation.yield(.messageStop(stopReason: AnthropicStopReason(rawValue: raw) ?? .other))
                 }
 
+            case "message_stop":
+                return
+
             case "error":
                 if let err = event["error"] as? [String: Any],
                    let msg = err["message"] as? String {
                     continuation.finish(throwing: AnthropicClientError.streamError(msg))
+                    return
                 }
 
             default: break
