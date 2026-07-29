@@ -61,6 +61,9 @@ struct ModelsPane: View {
         let isSigLIPInstalled = ModelDownloader.installed(for: SearchIndexConfig.manifest) != nil
         let isWhisperMLXAvailable = MLXWhisperTranscriber.isAvailable()
 
+        let siglipFolder = ModelDownloader.modelsDir
+        let whisperFolder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("scripts/transcription")
+
         return SettingsSection(title: "On-Device Models (Local Mac)") {
             VStack(spacing: 0) {
                 onDeviceRow(
@@ -68,7 +71,8 @@ struct ModelsPane: View {
                     source: "Hugging Face (palmier-io/siglip2-base-coreml)",
                     size: "355 MB • SHA256 Verified",
                     statusText: isSigLIPInstalled ? "Downloaded & Ready" : "On Demand",
-                    isInstalled: isSigLIPInstalled
+                    isInstalled: isSigLIPInstalled,
+                    folderURL: siglipFolder
                 )
                 Divider().overlay(AppTheme.Border.subtleColor)
 
@@ -77,14 +81,22 @@ struct ModelsPane: View {
                     source: "mlx-community/whisper-large-v3-turbo",
                     size: "1.6 GB • Metal / NPU",
                     statusText: isWhisperMLXAvailable ? "Downloaded & Ready" : "Script Ready",
-                    isInstalled: isWhisperMLXAvailable
+                    isInstalled: isWhisperMLXAvailable,
+                    folderURL: whisperFolder
                 )
             }
             .padding(.vertical, AppTheme.Spacing.xs)
         }
     }
 
-    private func onDeviceRow(name: String, source: String, size: String, statusText: String, isInstalled: Bool) -> some View {
+    private func onDeviceRow(
+        name: String,
+        source: String,
+        size: String,
+        statusText: String,
+        isInstalled: Bool,
+        folderURL: URL? = nil
+    ) -> some View {
         HStack(spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                 HStack(spacing: AppTheme.Spacing.xs) {
@@ -101,6 +113,22 @@ struct ModelsPane: View {
                     .foregroundStyle(AppTheme.Text.secondaryColor)
             }
             Spacer(minLength: AppTheme.Spacing.lg)
+
+            if let folderURL {
+                Button(action: {
+                    try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+                    NSWorkspace.shared.open(folderURL)
+                }) {
+                    HStack(spacing: AppTheme.Spacing.xxs) {
+                        Image(systemName: "folder")
+                            .font(.system(size: AppTheme.FontSize.xs))
+                        Text("Show in Finder")
+                            .font(.system(size: AppTheme.FontSize.xs))
+                    }
+                }
+                .buttonStyle(.capsule(.secondary))
+                .help("Open model directory on disk")
+            }
 
             Text(statusText)
                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
