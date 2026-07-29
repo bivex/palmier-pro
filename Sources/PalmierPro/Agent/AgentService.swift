@@ -64,12 +64,9 @@ final class AgentService {
 
     private func selectClient() -> (any AgentClient)? {
         let chosen = effectiveModel
-        if chosen.isGLM, let glmKey = GLMKeychain.load(), !glmKey.isEmpty {
-            return GLMClient(apiKey: glmKey, modelName: chosen.rawValue)
-        }
-        if let glmKey = GLMKeychain.load(), !glmKey.isEmpty, apiKey.isEmpty {
-            // default to GLM when only GLM key is present
-            return GLMClient(apiKey: glmKey, modelName: chosen.isGLM ? chosen.rawValue : AnthropicModel.glm52.rawValue)
+        if let glmKey = GLMKeychain.load(), !glmKey.isEmpty {
+            let modelName = chosen.isGLM ? chosen.rawValue : AnthropicModel.glm52.rawValue
+            return GLMClient(apiKey: glmKey, modelName: modelName)
         }
         if let googleKey = GoogleAIKeychain.load(), !googleKey.isEmpty {
             return GoogleAIClient(apiKey: googleKey, modelName: "gemini-2.0-flash")
