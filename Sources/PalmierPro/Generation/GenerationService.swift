@@ -437,11 +437,18 @@ final class GenerationService {
 
         let jobId: String
         do {
-            jobId = try await GenerationBackend.submit(
-                model: genInput.model,
-                params: params,
-                projectId: editor.projectId,
-            )
+            if DirectGenerationBackend.canHandle(model: genInput.model) {
+                jobId = try await DirectGenerationBackend.submit(
+                    model: genInput.model,
+                    params: params
+                )
+            } else {
+                jobId = try await GenerationBackend.submit(
+                    model: genInput.model,
+                    params: params,
+                    projectId: editor.projectId
+                )
+            }
         } catch {
             let (code, message) = backendError(error)
             let expected: Set<String> = [
@@ -485,7 +492,13 @@ final class GenerationService {
         onComplete: (@MainActor (MediaAsset) -> Void)?,
         onFailure: (@MainActor () -> Void)?
     ) async {
-        guard let publisher = GenerationBackend.subscribe(jobId: backendJobId) else {
+        let publisher: AnyPublisher<BackendGenerationJob?, ClientError>?
+        if backendJobId.hasPrefix("direct-") {
+            publisher = DirectGenerationBackend.subscribe(jobId: backendJobId)
+        } else {
+            publisher = GenerationBackend.subscribe(jobId: backendJobId)
+        }
+        guard let publisher else {
             if failIfUnavailable {
                 for placeholder in placeholders {
                     updateGenerationMetadata(placeholder, editor: editor, status: .failed("Backend not configured"))
