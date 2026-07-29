@@ -8,10 +8,19 @@ struct AgentPane: View {
     @State private var draft: String = ""
     @FocusState private var isFocused: Bool
 
+    @State private var hasGLMKey: Bool = false
+    @State private var maskedGLMKey: String = ""
+    @State private var glmDraft: String = ""
+    @FocusState private var isGLMFocused: Bool
+
     private let consoleURL = URL(string: "https://console.anthropic.com/settings/keys")!
+    private let glmConsoleURL = URL(string: "https://open.bigmodel.cn/usercenter/apikeys")!
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
+            SettingsSection(title: "Zhipu AI GLM (GLM-5.2 / GLM-4.5)") {
+                glmKeySection
+            }
             SettingsSection(title: "AI Chat") {
                 apiKeySection
             }
@@ -20,6 +29,107 @@ struct AgentPane: View {
             }
         }
         .onAppear(perform: refresh)
+    }
+
+    private var glmKeySection: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+            glmHeader
+            glmKeyField
+        }
+    }
+
+    private var glmHeader: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            Text("GLM API Key (Zhipu AI)")
+                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.medium))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+
+            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.sm) {
+                Text("Use GLM-5.2 / GLM-4.5 for AI agent editing. Stored in macOS Keychain.")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button(action: { NSWorkspace.shared.open(glmConsoleURL, configuration: .init(), completionHandler: nil) }) {
+                    HStack(spacing: AppTheme.Spacing.xxs) {
+                        Text("Get GLM API key")
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                    }
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Accent.link)
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .pointerStyle(.link)
+            }
+        }
+    }
+
+    private var glmKeyField: some View {
+        HStack(spacing: AppTheme.Spacing.sm) {
+            SecureField(hasGLMKey ? maskedGLMKey : "glm-...", text: $glmDraft)
+                .textFieldStyle(.plain)
+                .focused($isGLMFocused)
+                .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+                .onSubmit(saveGLM)
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .padding(.vertical, AppTheme.Spacing.smMd)
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                        .fill(Color.black.opacity(AppTheme.Opacity.muted))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                        .strokeBorder(
+                            isGLMFocused ? AppTheme.Border.primaryColor : AppTheme.Border.subtleColor,
+                            lineWidth: AppTheme.BorderWidth.thin
+                        )
+                )
+
+            let trimmed = glmDraft.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty {
+                Button("Save", action: saveGLM)
+                    .buttonStyle(.capsule(.prominent, size: .regular))
+                    .controlSize(.large)
+            } else if hasGLMKey {
+                Button(action: removeGLM) {
+                    Image(systemName: "trash")
+                        .font(.system(size: AppTheme.FontSize.md))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
+                }
+                .buttonStyle(.capsule(.secondary, size: .regular))
+                .controlSize(.large)
+                .help("Remove GLM API key")
+            }
+        }
+    }
+
+    private func saveGLM() {
+        let key = glmDraft.trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty else { return }
+        glmDraft = ""
+        isGLMFocused = false
+        Task { @MainActor in
+            await Task.detached(priority: .userInitiated) {
+                GLMKeychain.save(key)
+            }.value
+            hasGLMKey = true
+            maskedGLMKey = mask(key)
+        }
+    }
+
+    private func removeGLM() {
+        glmDraft = ""
+        Task { @MainActor in
+            await Task.detached(priority: .userInitiated) {
+                GLMKeychain.delete()
+            }.value
+            hasGLMKey = false
+            maskedGLMKey = ""
+        }
     }
 
     private var apiKeySection: some View {
@@ -115,6 +225,9 @@ struct AgentPane: View {
         Task { @MainActor in
             let key = await Self.loadKey()
             applyKey(key)
+            let glmKey = await Task.detached(priority: .utility) { GLMKeychain.load() ?? "" }.value
+            hasGLMKey = !glmKey.isEmpty
+            maskedGLMKey = mask(glmKey)
         }
     }
 

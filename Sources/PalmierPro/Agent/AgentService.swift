@@ -40,7 +40,11 @@ final class AgentService {
         !(GoogleAIKeychain.load() ?? "").isEmpty
     }
 
-    var hasApiKey: Bool { !apiKey.isEmpty || hasGoogleKey }
+    var hasGLMKey: Bool {
+        !(GLMKeychain.load() ?? "").isEmpty
+    }
+
+    var hasApiKey: Bool { !apiKey.isEmpty || hasGoogleKey || hasGLMKey }
 
     var canStream: Bool {
         if hasApiKey { return true }
@@ -54,6 +58,9 @@ final class AgentService {
     }
 
     private func selectClient() -> (any AgentClient)? {
+        if let glmKey = GLMKeychain.load(), !glmKey.isEmpty {
+            return GLMClient(apiKey: glmKey, modelName: "glm-5.2")
+        }
         if let googleKey = GoogleAIKeychain.load(), !googleKey.isEmpty {
             return GoogleAIClient(apiKey: googleKey, modelName: "gemini-2.0-flash")
         }
