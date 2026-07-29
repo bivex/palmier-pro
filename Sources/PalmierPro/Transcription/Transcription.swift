@@ -5,11 +5,13 @@ import Speech
 enum TranscriptionProvider: String, CaseIterable, Sendable, Codable {
     case local
     case cloud
+    case mlxWhisper
 
     var label: String {
         switch self {
         case .local: "Local"
         case .cloud: "Cloud"
+        case .mlxWhisper: "Whisper MLX (Local)"
         }
     }
 }

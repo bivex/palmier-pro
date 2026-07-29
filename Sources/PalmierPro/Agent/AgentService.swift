@@ -36,7 +36,11 @@ final class AgentService {
         }
     }
 
-    var hasApiKey: Bool { !apiKey.isEmpty }
+    var hasGoogleKey: Bool {
+        !(GoogleAIKeychain.load() ?? "").isEmpty
+    }
+
+    var hasApiKey: Bool { !apiKey.isEmpty || hasGoogleKey }
 
     var canStream: Bool {
         if hasApiKey { return true }
@@ -50,8 +54,11 @@ final class AgentService {
     }
 
     private func selectClient() -> (any AgentClient)? {
+        if let googleKey = GoogleAIKeychain.load(), !googleKey.isEmpty {
+            return GoogleAIClient(apiKey: googleKey, modelName: "gemini-2.0-flash")
+        }
         let chosen = effectiveModel
-        if hasApiKey { return AnthropicClient(apiKey: apiKey, model: chosen) }
+        if !apiKey.isEmpty { return AnthropicClient(apiKey: apiKey, model: chosen) }
         if AccountService.shared.isSignedIn {
             return PalmierClient(model: chosen)
         }

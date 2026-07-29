@@ -249,6 +249,12 @@ extension EditorViewModel {
                                 preferredLocale: request.locale,
                                 projectId: projectId
                             )
+                        case .mlxWhisper:
+                            let lang = request.locale.flatMap { CloudTranscription.languageIdentifier($0) }
+                            result = try await MLXWhisperTranscriber.transcribe(
+                                fileURL: job.url,
+                                language: lang
+                            ).offsetting(by: job.range?.lowerBound ?? 0)
                         }
                         return (job.mediaRef, .success(result))
                     } catch {

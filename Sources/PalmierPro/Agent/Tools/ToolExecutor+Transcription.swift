@@ -170,11 +170,18 @@ extension ToolExecutor {
         }
         let account = AccountService.shared
         let cost = await estimatedCloudCost()
-        let provider: TranscriptionProvider = Self.canUseCloudTranscription(
+        let provider: TranscriptionProvider
+        if MLXWhisperTranscriber.isAvailable() {
+            provider = .mlxWhisper
+        } else if Self.canUseCloudTranscription(
             isSignedIn: account.isSignedIn,
             remainingCredits: account.remainingCredits,
             estimatedCost: cost
-        ) ? .cloud : .local
+        ) {
+            provider = .cloud
+        } else {
+            provider = .local
+        }
         return TranscriptionToolContext(
             provider: provider,
             preferredLocale: provider == .cloud ? nil : try await Self.parseLocale(args, path: path)
