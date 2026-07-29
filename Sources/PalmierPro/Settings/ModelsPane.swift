@@ -67,7 +67,20 @@ struct ModelsPane: View {
         let isWhisperMLXAvailable = MLXWhisperTranscriber.isAvailable()
 
         let siglipFolder = ModelDownloader.modelsDir
-        let whisperFolder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("scripts/transcription")
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let hfWhisperDir = homeDir.appendingPathComponent(".cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo")
+        let hfCacheDir = homeDir.appendingPathComponent(".cache/huggingface/hub")
+        let scriptsDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("scripts/transcription")
+
+        let whisperFolder: URL = {
+            if FileManager.default.fileExists(atPath: hfWhisperDir.path) {
+                return hfWhisperDir
+            } else if FileManager.default.fileExists(atPath: hfCacheDir.path) {
+                return hfCacheDir
+            } else {
+                return scriptsDir
+            }
+        }()
 
         return SettingsSection(title: "On-Device Models (Local Mac)") {
             VStack(spacing: 0) {
