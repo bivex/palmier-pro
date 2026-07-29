@@ -40,7 +40,6 @@ private final class GLMStreamingSession: @unchecked Sendable {
         config.waitsForConnectivity = true
         config.timeoutIntervalForRequest = 300
         config.timeoutIntervalForResource = 600
-        config.httpShouldUsePipelining = false
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         config.urlCache = nil
         return URLSession(configuration: config)
