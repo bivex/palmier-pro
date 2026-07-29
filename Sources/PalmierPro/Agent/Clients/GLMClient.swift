@@ -40,7 +40,7 @@ struct GLMClient: AgentClient {
     let modelName: String
     var maxTokens: Int = 8192
 
-    private static let endpoint = URL(string: "https://open.bigmodel.cn/api/paas/v4/chat/completions")!
+    private static let endpoint = URL(string: "https://api.z.ai/api/paas/v4/chat/completions")!
 
     init(apiKey: String, modelName: String = "glm-5.2") {
         self.apiKey = apiKey
@@ -114,8 +114,7 @@ struct GLMClient: AgentClient {
             body["tools"] = openAITools
         }
 
-        let endpointURL = apiKey.starts(with: "z") ? Self.zaiEndpoint : Self.endpoint
-        var request = URLRequest(url: endpointURL)
+        var request = URLRequest(url: Self.endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
@@ -131,7 +130,6 @@ struct GLMClient: AgentClient {
         try await parseOpenAISSE(bytes: bytes, continuation: continuation)
     }
 
-    private static let zaiEndpoint = URL(string: "https://api.z.ai/api/paas/v4/chat/completions")!
 
     private func parseOpenAISSE(
         bytes: URLSession.AsyncBytes,
