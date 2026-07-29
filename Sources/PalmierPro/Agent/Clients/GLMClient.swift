@@ -176,7 +176,7 @@ struct GLMClient: AgentClient {
                 try await AnthropicSSE.parse(lines: lineStream, continuation: continuation)
                 Log.agent.notice("GLMClient stream completed successfully")
                 break
-            } catch let urlErr as URLError where (urlErr.code == .networkConnectionLost || urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut) && attempts < 2 {
+            } catch let urlErr as URLError where !Task.isCancelled && (urlErr.code == .networkConnectionLost || urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut) && attempts < 2 {
                 attempts += 1
                 Log.agent.warning("GLMClient network error (\(urlErr.localizedDescription)), creating fresh session and retrying (attempt \(attempts)/2)...")
                 activeSession = URLSession(configuration: session.configuration)
