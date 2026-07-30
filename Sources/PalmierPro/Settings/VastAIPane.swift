@@ -29,6 +29,8 @@ struct VastAIPane: View {
         ("ANY", "Any Available GPU (Cheapest)", "Fetching live API price...")
     ]
 
+    @State private var autoRefreshTask: Task<Void, Never>?
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
             apiKeySection
@@ -38,7 +40,14 @@ struct VastAIPane: View {
                 activeInstancesSection
             }
         }
-        .onAppear(perform: refreshData)
+        .onAppear {
+            refreshData()
+            startAutoRefresh()
+        }
+        .onDisappear {
+            autoRefreshTask?.cancel()
+            autoRefreshTask = nil
+        }
     }
 
     private var apiKeySection: some View {
@@ -390,6 +399,22 @@ struct VastAIPane: View {
         Task {
             try? await VastAIClient.destroyInstance(id: inst.id)
             refreshData()
+        }
+    }
+
+    private func startAutoRefresh() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                if Task.isCancelled { break }
+                if hasVastKey {
+                    let insts = (try? await VastAIClient.listInstances()) ?? []
+                    if !Task.isCancelled {
+                        self.vastInstances = insts
+                    }
+                }
+            }
         }
     }
 
