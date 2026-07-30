@@ -89,22 +89,56 @@ final class SSHTunnelManager: ObservableObject {
     private func startHealthCheck(localPort: Int, host: String, port: Int) {
         healthCheckTask?.cancel()
         healthCheckTask = Task { @MainActor [weak self] in
-            for _ in 0..<15 {
-                try? await Task.sleep(for: .milliseconds(500))
+            for attempt in 1...30 {
+                try? await Task.sleep(for: .seconds(2))
                 guard let self else { return }
 
                 if await checkPortResponsive(localPort: localPort) {
                     self.state = .connected(host: host, port: port, localPort: localPort)
+                    print("[ssh-tunnel] NOTICE: SSH Local Tunnel connected successfully on port \(localPort) to \(host):\(port)")
                     return
+                }
+
+                if let proc = self.process, !proc.isRunning {
+                    print("[ssh-tunnel] NOTICE: Container SSH starting up (attempt \(attempt)/30). Retrying connection...")
+                    self.state = .connecting(host: host, port: port, localPort: localPort)
+                    self.restartSSHProcess(localPort: localPort, host: host, port: port)
                 }
             }
 
             guard let self else { return }
             if case .connecting = self.state {
-                // Keep trying periodically in background
-                self.state = .connected(host: host, port: port, localPort: localPort)
+                self.state = .failed(reason: "SSH connection timed out. Container may still be downloading Docker image.")
             }
         }
+    }
+
+    private func restartSSHProcess(localPort: Int, host: String, port: Int) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        proc.arguments = [
+            "-N",
+            "-L", "\(localPort):127.0.0.1:8188",
+            "-p", "\(port)",
+            "root@\(host)",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "ExitOnForwardFailure=yes",
+            "-o", "ServerAliveInterval=15",
+            "-o", "ConnectTimeout=5"
+        ]
+
+        proc.terminationHandler = { [weak self] p in
+            Task { @MainActor in
+                guard let self else { return }
+                if case .connected = self.state {
+                    self.state = .failed(reason: "SSH process exited unexpectedly (code \(p.terminationStatus))")
+                }
+            }
+        }
+
+        try? proc.run()
+        self.process = proc
     }
 
     private func checkPortResponsive(localPort: Int) async -> Bool {
