@@ -47,12 +47,12 @@ final class SSHTunnelManager: ObservableObject {
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         var args = [
             "-N",
-            "-L", "\(localPort):127.0.0.1:\(remotePort)",
+            "-L", "\(localPort):127.0.0.1:8188",
+            "-L", "8080:127.0.0.1:8080",
             "-p", "\(sshPort)",
             "root@\(sshHost)",
             "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "ExitOnForwardFailure=yes",
             "-o", "ServerAliveInterval=15"
         ]
         if let keyPath = SSHTunnelManager.findDefaultPrivateKeyPath() {
@@ -154,15 +154,22 @@ final class SSHTunnelManager: ObservableObject {
     }
 
     private func checkPortResponsive(localPort: Int) async -> Bool {
-        guard let url = URL(string: "http://127.0.0.1:\(localPort)/system_stats") else { return false }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 2.0
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            return (resp as? HTTPURLResponse) != nil
-        } catch {
-            return false
+        let candidateUrls = [
+            "http://127.0.0.1:\(localPort)/system_stats",
+            "http://127.0.0.1:8080/system_stats",
+            "http://127.0.0.1:\(localPort)/",
+            "http://127.0.0.1:8080/"
+        ]
+        for urlStr in candidateUrls {
+            guard let url = URL(string: urlStr) else { continue }
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 1.5
+            if let (_, resp) = try? await URLSession.shared.data(for: req),
+               let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                return true
+            }
         }
+        return false
     }
 
     private static func findDefaultPrivateKeyPath() -> String? {
