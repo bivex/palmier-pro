@@ -246,7 +246,7 @@ enum VastAIClient {
     }
 
     /// Rent and launch instance for specified offer ID
-    static func createInstance(offerId: Int, image: String = "vastai/comfy:@vastai-automatic-tag", diskGb: Int = 40) async throws {
+    static func createInstance(offerId: Int, image: String = "ai-dock/comfyui:latest-cuda", diskGb: Int = 40) async throws {
         guard let apiKey = VastAIKeychain.load() else {
             print("[vast-ai] ERROR: Cannot create instance — missing API key")
             throw VastError.missingAPIKey
