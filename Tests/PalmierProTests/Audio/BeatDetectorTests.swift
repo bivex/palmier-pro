@@ -73,4 +73,13 @@ struct BeatDetectorTests {
         let seam = result.beats.filter { $0 > 28.9 && $0 < 31.1 }
         #expect(seam.count >= 3, "beats missing around chunk seam: \(seam)")
     }
+
+    @Test func detectRealWavFile() async throws {
+        let wavPath = "/Users/password9090/Downloads/testaudio_16000_test01_20s.wav"
+        guard FileManager.default.fileExists(atPath: wavPath) else { return }
+        let url = URL(fileURLWithPath: wavPath)
+        let detector = try BeatDetector(computeUnits: .cpuAndGPU)
+        let result = try await detector.detect(in: url)
+        #expect(!result.beats.isEmpty)
+    }
 }

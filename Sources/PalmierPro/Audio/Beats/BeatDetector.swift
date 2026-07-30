@@ -38,7 +38,7 @@ final class BeatDetector: @unchecked Sendable {
     // MARK: - Cached analysis (UI + agent entry point)
 
     static let cache = DiskCache(named: "BeatAnalysis")
-    private static let shared = try? BeatDetector()
+    private static let shared = try? BeatDetector(computeUnits: .cpuAndGPU)
     private static let pipelineGate = AsyncSemaphore(value: 2)
     private static let cacheLookupGate = AsyncSemaphore(value: 2)
 
@@ -92,7 +92,7 @@ final class BeatDetector: @unchecked Sendable {
         }
     }
 
-    init(computeUnits: MLComputeUnits = .all) throws {
+    init(computeUnits: MLComputeUnits = .cpuAndGPU) throws {
         guard let url = Self.modelURL() else {
             throw DetectError.modelMissing
         }
