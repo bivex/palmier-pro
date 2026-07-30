@@ -160,6 +160,7 @@ final class BeatDetector: @unchecked Sendable {
         }
 
         var samples: [Float] = []
+        var bufferCount = 0
         while let sample = output.copyNextSampleBuffer() {
             guard let block = CMSampleBufferGetDataBuffer(sample) else { continue }
             let length = CMBlockBufferGetDataLength(block)
@@ -172,6 +173,8 @@ final class BeatDetector: @unchecked Sendable {
                     destination: raw.baseAddress!.advanced(by: start * MemoryLayout<Float>.size)
                 )
             }
+            bufferCount += 1
+            if bufferCount % 256 == 0 { try Task.checkCancellation() }
         }
         if reader.status == .failed {
             throw DetectError.readFailed(reader.error?.localizedDescription ?? "read failed")
@@ -190,6 +193,7 @@ final class BeatDetector: @unchecked Sendable {
         // Start `border` frames early so frame 0 is interior (zeros act as pad).
         var chunkStart = -Self.border  // in frames, relative to the piece
         while chunkStart + Self.border < totalFrames {
+            try Task.checkCancellation()
             let sampleStart = chunkStart * Self.hop
             var chunk = [Float](repeating: 0, count: Self.chunkSamples)
             let srcLo = max(0, sampleStart)
