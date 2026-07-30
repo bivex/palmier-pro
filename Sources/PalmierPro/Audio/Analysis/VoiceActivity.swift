@@ -37,17 +37,17 @@ enum VoiceActivity {
     static func analysis(for sourceURL: URL, mediaRef: String) async throws -> Analysis {
         if let cached = cachedAnalysis(for: sourceURL, mediaRef: mediaRef) { return cached }
         #if BUNDLED_SPEECH
-        try await pipelineGate.wait()
-        defer { Task { await pipelineGate.signal() } }
-        let samples: [Float]
-        do {
-            samples = try await AudioTrackReader.readMonoFloats(from: sourceURL, sampleRate: Double(sampleRate))
-        } catch AudioTrackReader.ReadError.noAudioTrack(_) {
-            return cacheNoAudioAnalysis(for: sourceURL, mediaRef: mediaRef)
+        return try await pipelineGate.withPermit {
+            let samples: [Float]
+            do {
+                samples = try await AudioTrackReader.readMonoFloats(from: sourceURL, sampleRate: Double(sampleRate))
+            } catch AudioTrackReader.ReadError.noAudioTrack(_) {
+                return cacheNoAudioAnalysis(for: sourceURL, mediaRef: mediaRef)
+            }
+            let analysis = try await modelBox.analyze(samples: samples)
+            cache(analysis, for: sourceURL, mediaRef: mediaRef)
+            return analysis
         }
-        let analysis = try await modelBox.analyze(samples: samples)
-        cache(analysis, for: sourceURL, mediaRef: mediaRef)
-        return analysis
         #else
         throw MLXRuntime.Unavailable()
         #endif

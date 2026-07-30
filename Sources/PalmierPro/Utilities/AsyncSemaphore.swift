@@ -3,17 +3,25 @@
 actor AsyncSemaphore {
     private var permits: Int
     private var nextWaiterID = 0
-    private var waiters: [(id: Int, continuation: CheckedContinuation<Void, Error>)] = []
+    private var waiters: [Int: CheckedContinuation<Void, Error>] = [:]
 
     init(value: Int) { self.permits = max(0, value) }
 
+    /// Executes an async block safely inside the semaphore gate, guaranteeing
+    /// permit release even on failure or task cancellation.
+    func withPermit<T: Sendable>(_ operation: () async throws -> T) async throws -> T {
+        try await wait()
+        defer { signal() }
+        return try await operation()
+    }
+
     func wait() async throws {
+        try Task.checkCancellation()
         if permits > 0 {
             permits -= 1
             return
         }
 
-        try Task.checkCancellation()
         let id = nextWaiterID
         nextWaiterID += 1
 
@@ -22,7 +30,7 @@ actor AsyncSemaphore {
                 if Task.isCancelled {
                     continuation.resume(throwing: CancellationError())
                 } else {
-                    waiters.append((id, continuation))
+                    self.waiters[id] = continuation
                 }
             }
         } onCancel: {
@@ -31,17 +39,17 @@ actor AsyncSemaphore {
     }
 
     func signal() {
-        if let next = waiters.first {
-            waiters.removeFirst()
-            next.continuation.resume()
+        if let (id, continuation) = waiters.first {
+            waiters.removeValue(forKey: id)
+            continuation.resume()
         } else {
             permits += 1
         }
     }
 
     private func cancelWaiter(id: Int) {
-        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
-        let waiter = waiters.remove(at: index)
-        waiter.continuation.resume(throwing: CancellationError())
+        if let continuation = waiters.removeValue(forKey: id) {
+            continuation.resume(throwing: CancellationError())
+        }
     }
 }

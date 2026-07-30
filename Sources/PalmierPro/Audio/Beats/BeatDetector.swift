@@ -49,31 +49,31 @@ final class BeatDetector: @unchecked Sendable {
         }
         try Task.checkCancellation()
         guard let detector = shared else { throw DetectError.modelMissing }
-        try await pipelineGate.wait()
-        defer { Task { await pipelineGate.signal() } }
-        let analysis = try await detector.detect(in: sourceURL)
-        let outputURL = analysisURL(for: sourceURL, mediaRef: mediaRef)
-        removeStaleCaches(for: mediaRef, keeping: outputURL)
-        if let data = try? JSONEncoder().encode(analysis) {
-            try? data.write(to: outputURL)
+        return try await pipelineGate.withPermit {
+            let analysis = try await detector.detect(in: sourceURL)
+            let outputURL = analysisURL(for: sourceURL, mediaRef: mediaRef)
+            removeStaleCaches(for: mediaRef, keeping: outputURL)
+            if let data = try? JSONEncoder().encode(analysis) {
+                try? data.write(to: outputURL)
+            }
+            return analysis
         }
-        return analysis
     }
 
     @concurrent
     static func cachedAnalysis(for sourceURL: URL, mediaRef: String) async -> BeatAnalysisCacheEntry? {
         do {
-            try await cacheLookupGate.wait()
+            return try await cacheLookupGate.withPermit {
+                guard !Task.isCancelled else { return nil }
+                let fileTag = DiskCache.sizeMtimeTag(for: sourceURL)
+                guard let data = try? Data(contentsOf: analysisURL(mediaRef: mediaRef, fileTag: fileTag)),
+                      let analysis = try? JSONDecoder().decode(BeatAnalysis.self, from: data) else { return nil }
+                guard !Task.isCancelled else { return nil }
+                return BeatAnalysisCacheEntry(analysis: analysis, fileTag: fileTag)
+            }
         } catch {
             return nil
         }
-        defer { Task { await cacheLookupGate.signal() } }
-        guard !Task.isCancelled else { return nil }
-        let fileTag = DiskCache.sizeMtimeTag(for: sourceURL)
-        guard let data = try? Data(contentsOf: analysisURL(mediaRef: mediaRef, fileTag: fileTag)),
-              let analysis = try? JSONDecoder().decode(BeatAnalysis.self, from: data) else { return nil }
-        guard !Task.isCancelled else { return nil }
-        return BeatAnalysisCacheEntry(analysis: analysis, fileTag: fileTag)
     }
 
     private static func analysisURL(for sourceURL: URL, mediaRef: String) -> URL {
