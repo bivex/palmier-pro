@@ -11,7 +11,7 @@ struct VastAIPane: View {
     @State private var deployError: String?
 
     @State private var selectedModelTemplate = "flux-schnell"
-    @State private var selectedGPUType = "RTX_4090"
+    @State private var selectedGPUType = "RTX 4090"
 
     @ObservedObject private var tunnelManager = SSHTunnelManager.shared
 
@@ -22,9 +22,10 @@ struct VastAIPane: View {
     ]
 
     private let gpuOptions = [
-        ("RTX_4090", "NVIDIA RTX 4090 (24GB VRAM)", "~$0.25 - $0.35/hr"),
-        ("RTX_3090", "NVIDIA RTX 3090 (24GB VRAM)", "~$0.15 - $0.25/hr"),
-        ("A100", "NVIDIA A100 (80GB VRAM)", "~$0.80 - $1.20/hr")
+        ("RTX 4090", "NVIDIA RTX 4090 (24GB VRAM)", "~$0.25 - $0.35/hr"),
+        ("RTX 3090", "NVIDIA RTX 3090 (24GB VRAM)", "~$0.15 - $0.25/hr"),
+        ("A100 PCIE 80GB", "NVIDIA A100 (80GB VRAM)", "~$0.80 - $1.20/hr"),
+        ("ANY", "Any Available GPU (Cheapest)", "Lowest $/hr rate")
     ]
 
     var body: some View {
