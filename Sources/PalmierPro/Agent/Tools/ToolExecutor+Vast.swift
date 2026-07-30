@@ -63,6 +63,11 @@ extension ToolExecutor {
                   let port = target.ssh_port else {
                 throw ToolError("No Vast.ai instance found with valid SSH credentials.")
             }
+            if case .connected(let currentHost, let currentPort, _) = SSHTunnelManager.shared.state,
+               currentHost == host, currentPort == port {
+                return .ok("SSH Local Tunnel is already CONNECTED and active to root@\(host):\(port) (http://127.0.0.1:8188 🟢).")
+            }
+
             await MainActor.run {
                 SSHTunnelManager.shared.connect(sshHost: host, sshPort: port)
             }

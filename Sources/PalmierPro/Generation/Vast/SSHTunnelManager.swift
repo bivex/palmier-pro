@@ -38,7 +38,15 @@ final class SSHTunnelManager: ObservableObject {
         remotePort: Int = 8188,
         localPort: Int = 8188
     ) {
-        SSHTunnelManager.killStaleSSHProcesses(localPort: localPort)
+        if case .connected(let h, let p, let lp) = state,
+           h == sshHost, p == sshPort, lp == localPort,
+           let proc = process, proc.isRunning {
+            print("[ssh-tunnel] NOTICE: SSH Tunnel already connected to root@\(sshHost):\(sshPort). Reusing active connection.")
+            return
+        }
+
+        let currentPid = process?.processIdentifier
+        SSHTunnelManager.killStaleSSHProcesses(localPort: localPort, excludePid: currentPid)
         disconnect()
 
         self.activeLocalPort = localPort
@@ -82,7 +90,7 @@ final class SSHTunnelManager: ObservableObject {
     }
 
     /// Kill any stale SSH processes holding the given local port (e.g. leftover from a previous run)
-    private static func killStaleSSHProcesses(localPort: Int) {
+    private static func killStaleSSHProcesses(localPort: Int, excludePid: Int32? = nil) {
         let lsof = Process()
         lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
         lsof.arguments = ["-t", "-i", ":\(localPort)"]
@@ -96,6 +104,7 @@ final class SSHTunnelManager: ObservableObject {
             .components(separatedBy: .newlines)
             .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) } ?? []
         for pid in pids {
+            if let excludePid, Int32(pid) == excludePid { continue }
             kill(pid_t(pid), SIGTERM)
             print("[ssh-tunnel] NOTICE: Killed stale SSH process (pid \(pid)) holding port \(localPort)")
         }
