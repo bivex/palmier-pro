@@ -49,6 +49,7 @@ final class SSHTunnelManager: ObservableObject {
         var args = [
             "-N",
             "-L", "\(localPort):127.0.0.1:8188",
+            "-L", "18188:127.0.0.1:18188",
             "-L", "8080:127.0.0.1:8080",
             "-p", "\(sshPort)",
             "root@\(sshHost)",
@@ -157,8 +158,10 @@ final class SSHTunnelManager: ObservableObject {
     private func checkPortResponsive(localPort: Int) async -> Bool {
         let candidateUrls = [
             "http://127.0.0.1:\(localPort)/system_stats",
+            "http://127.0.0.1:18188/system_stats",
             "http://127.0.0.1:8080/system_stats",
             "http://127.0.0.1:\(localPort)/",
+            "http://127.0.0.1:18188/",
             "http://127.0.0.1:8080/"
         ]
         for urlStr in candidateUrls {
