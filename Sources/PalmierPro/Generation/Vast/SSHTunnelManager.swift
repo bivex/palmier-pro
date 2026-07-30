@@ -45,7 +45,7 @@ final class SSHTunnelManager: ObservableObject {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        proc.arguments = [
+        var args = [
             "-N",
             "-L", "\(localPort):127.0.0.1:\(remotePort)",
             "-p", "\(sshPort)",
@@ -55,6 +55,10 @@ final class SSHTunnelManager: ObservableObject {
             "-o", "ExitOnForwardFailure=yes",
             "-o", "ServerAliveInterval=15"
         ]
+        if let keyPath = SSHTunnelManager.findDefaultPrivateKeyPath() {
+            args.append(contentsOf: ["-i", keyPath, "-o", "IdentitiesOnly=yes"])
+        }
+        proc.arguments = args
 
         proc.terminationHandler = { [weak self] p in
             Task { @MainActor in
@@ -116,7 +120,7 @@ final class SSHTunnelManager: ObservableObject {
     private func restartSSHProcess(localPort: Int, host: String, port: Int) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        proc.arguments = [
+        var args = [
             "-N",
             "-L", "\(localPort):127.0.0.1:8188",
             "-p", "\(port)",
@@ -127,6 +131,10 @@ final class SSHTunnelManager: ObservableObject {
             "-o", "ServerAliveInterval=15",
             "-o", "ConnectTimeout=5"
         ]
+        if let keyPath = SSHTunnelManager.findDefaultPrivateKeyPath() {
+            args.append(contentsOf: ["-i", keyPath, "-o", "IdentitiesOnly=yes"])
+        }
+        proc.arguments = args
 
         proc.terminationHandler = { [weak self] p in
             Task { @MainActor in
@@ -151,5 +159,20 @@ final class SSHTunnelManager: ObservableObject {
         } catch {
             return false
         }
+    }
+
+    private static func findDefaultPrivateKeyPath() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "\(home)/.ssh/id_ed25519",
+            "\(home)/.ssh/id_rsa",
+            "\(home)/.ssh/id_vast_ai"
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+        }
+        return nil
     }
 }
