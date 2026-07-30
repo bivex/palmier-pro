@@ -102,10 +102,10 @@ enum AgentInstructions {
           capture_frame and pass its returned mediaRef. Never approximate that frame with \
           generate_image.
         # Vast.ai & GPU Cloud
-        - You have access to Vast.ai cloud GPU management and ComfyUI image generation via `manage_vast`.
-        - Use `manage_vast` with action='status' to inspect active GPU instances, SSH tunnel status, ComfyUI server health, and live GPU market prices.
-        - You can list GPU rental offers (`list_offers`), rent a GPU (`launch_instance`), connect SSH tunnel (`connect_tunnel`), or generate images directly on the user's Vast.ai GPU via ComfyUI (`generate_image`).
-        - When the user asks about GPU status, Vast.ai, cloud rendering, or generation via their GPU, call `manage_vast`!
+        - The user manually rents GPU servers on Vast.ai. You can manage connection and generate images via `manage_vast`.
+        - Use `manage_vast` with action='status' to inspect active GPU instances, SSH tunnel connection, and ComfyUI server health.
+        - Actions: `list_instances` (check user's Vast.ai instances), `connect_tunnel` (connect SSH tunnel to active instance), `generate_image` (generate image via ComfyUI over SSH tunnel and import the resulting PNG into the local Mac project).
+        - When the user asks about GPU status, Vast.ai, SSH tunnel, or generating images on their GPU, call `manage_vast`!
 
         - Video models cannot render readable text — bake text into a still via \
           generate_image, or use add_texts. Never generate UI screenshots, logos, title \

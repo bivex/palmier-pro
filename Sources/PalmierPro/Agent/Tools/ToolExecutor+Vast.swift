@@ -50,39 +50,18 @@ extension ToolExecutor {
             }
             return .ok(jsonStr)
 
-        case "list_offers":
-            let gpuName = args.string("gpuName") ?? "RTX 3090"
-            let best = try await VastAIClient.searchBestOffer(gpuType: gpuName)
-            let offerInfo: [String: Any] = [
-                "id": best.id,
-                "gpu": best.gpu_name ?? gpuName,
-                "dph": best.dph_total ?? 0.0,
-                "price": best.formattedPrice
-            ]
-            guard let jsonStr = Self.jsonString(["bestOffer": offerInfo]) else {
-                return .error("Failed to encode offer")
-            }
-            return .ok(jsonStr)
-
-        case "launch_instance":
-            let offerId = args.int("offerId")
-            let gpuName = args.string("gpuName") ?? "RTX 3090"
-            let targetOfferId: Int
-            if let offerId {
-                targetOfferId = offerId
-            } else {
-                let best = try await VastAIClient.searchBestOffer(gpuType: gpuName)
-                targetOfferId = best.id
-            }
-            try await VastAIClient.createInstance(offerId: targetOfferId)
-            return .ok("Successfully submitted GPU rental request for Vast offer #\(targetOfferId). The container is starting up and initializing ComfyUI. Call manage_vast action='status' in ~2 minutes.")
-
         case "connect_tunnel":
             let instances = try await VastAIClient.listInstances()
-            guard let running = instances.first(where: { $0.isRunning }),
-                  let host = running.ssh_host,
-                  let port = running.ssh_port else {
-                throw ToolError("No running Vast.ai instance found with SSH credentials. Launch an instance first.")
+            let targetInstance: VastAIClient.VastInstance?
+            if let targetId = args.int("instanceId") {
+                targetInstance = instances.first(where: { $0.id == targetId })
+            } else {
+                targetInstance = instances.first(where: { $0.isRunning }) ?? instances.first
+            }
+            guard let target = targetInstance,
+                  let host = target.ssh_host,
+                  let port = target.ssh_port else {
+                throw ToolError("No Vast.ai instance found with valid SSH credentials.")
             }
             await MainActor.run {
                 SSHTunnelManager.shared.connect(sshHost: host, sshPort: port)
@@ -125,7 +104,7 @@ extension ToolExecutor {
             return .ok("Successfully generated image via ComfyUI on GPU! Media asset ID: '\(asset.id)' (\(asset.name)). Use add_clips to place it on the timeline.")
 
         default:
-            throw ToolError("Unknown action '\(action)'. Valid actions: status, list_instances, list_offers, launch_instance, connect_tunnel, generate_image")
+            throw ToolError("Unknown action '\(action)'. Valid actions: status, list_instances, connect_tunnel, generate_image")
         }
     }
 }

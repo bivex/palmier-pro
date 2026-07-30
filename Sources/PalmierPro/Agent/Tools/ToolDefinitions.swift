@@ -1029,16 +1029,15 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .manageVast,
-            description: "Check status, search GPU offers, rental instances, connect SSH tunnel, or generate images via ComfyUI on Vast.ai cloud GPUs! Set `action` to: `status` (default — check running instances, SSH tunnel state, ComfyUI readiness, and live GPU prices); `list_instances` (list user's Vast.ai instances); `list_offers` (search available GPU rental offers on Vast.ai market, optional `gpuName`); `launch_instance` (rent GPU instance, optional `gpuName` or `offerId`); `connect_tunnel` (connect SSH tunnel to running instance); `generate_image` (generate AI image using ComfyUI on the connected GPU instance over SSH tunnel, takes `prompt`, optional `width` and `height`).",
+            description: "Check status, view user instances, connect SSH tunnel, or generate images via ComfyUI on the user's Vast.ai GPU instance over SSH tunnel! Set `action` to: `status` (default — check active instances, SSH tunnel connection, and ComfyUI readiness); `list_instances` (list user's Vast.ai instances and their status/SSH details); `connect_tunnel` (connect SSH tunnel to user's running instance, optional `instanceId`); `generate_image` (generate AI image using ComfyUI on the connected GPU instance over SSH tunnel, downloads generated PNG to local project, takes `prompt`, optional `width` and `height`).",
             inputSchema: objectSchema(
                 properties: [
                     "action": [
                         "type": "string",
-                        "enum": ["status", "list_instances", "list_offers", "launch_instance", "connect_tunnel", "generate_image"],
+                        "enum": ["status", "list_instances", "connect_tunnel", "generate_image"],
                         "description": "Vast.ai operation to perform."
                     ],
-                    "gpuName": ["type": "string", "description": "Optional GPU model name for list_offers or launch_instance (e.g. 'RTX 3090', 'RTX 4090')."],
-                    "offerId": ["type": "integer", "description": "Optional specific offer ID to rent for launch_instance."],
+                    "instanceId": ["type": "integer", "description": "Optional specific instance ID to target for connect_tunnel."],
                     "prompt": ["type": "string", "description": "Prompt for generate_image."],
                     "width": ["type": "integer", "description": "Width for generate_image (default 1024)."],
                     "height": ["type": "integer", "description": "Height for generate_image (default 1024)."],
