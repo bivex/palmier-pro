@@ -275,15 +275,51 @@ enum VastAIClient {
         print("[vast-ai] NOTICE: Offer #\(offerId) rented successfully! Container starting up.")
     }
 
-    /// Fetch live minimum market prices for supported GPU types directly from Vast.ai API
+    /// Fetch live minimum market prices for all GPU types in a single batched API query (prevents 429 rate limits)
     static func fetchLiveGpuPrices() async -> [String: String] {
-        let types = ["RTX 4090", "RTX 3090", "A100 PCIE 80GB", "ANY"]
-        var results: [String: String] = [:]
-        for type in types {
-            if let best = try? await searchBestOffer(gpuType: type) {
-                results[type] = best.formattedPrice
+        guard let apiKey = VastAIKeychain.load(),
+              let url = URL(string: "\(baseURL)/bundles/?api_key=\(apiKey)") else {
+            return [:]
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "verified": ["eq": true],
+            "external": ["eq": false],
+            "rentable": ["eq": true],
+            "rented": ["eq": false],
+            "order": [["dph_total", "asc"]],
+            "type": "on-demand",
+            "allocated_storage": 40
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(SearchOffersResponse.self, from: data) else {
+            return [:]
+        }
+
+        var prices: [String: String] = [:]
+        if let cheapestAny = decoded.offers.first {
+            prices["ANY"] = cheapestAny.formattedPrice
+        }
+
+        for offer in decoded.offers {
+            guard let name = offer.gpu_name else { continue }
+            if name.contains("4090") && prices["RTX 4090"] == nil {
+                prices["RTX 4090"] = offer.formattedPrice
+            } else if name.contains("3090") && prices["RTX 3090"] == nil {
+                prices["RTX 3090"] = offer.formattedPrice
+            } else if (name.contains("A100") || name.contains("a100")) && prices["A100"] == nil {
+                prices["A100"] = offer.formattedPrice
             }
         }
-        return results
+
+        print("[vast-ai] NOTICE: Live market prices loaded via single batch query: \(prices)")
+        return prices
     }
 }

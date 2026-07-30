@@ -25,7 +25,7 @@ struct VastAIPane: View {
     private let gpuOptions = [
         ("RTX 4090", "NVIDIA RTX 4090 (24GB VRAM)", "Fetching live API price..."),
         ("RTX 3090", "NVIDIA RTX 3090 (24GB VRAM)", "Fetching live API price..."),
-        ("A100 PCIE 80GB", "NVIDIA A100 (80GB VRAM)", "Fetching live API price..."),
+        ("A100", "NVIDIA A100 (80GB VRAM)", "Fetching live API price..."),
         ("ANY", "Any Available GPU (Cheapest)", "Fetching live API price...")
     ]
 
