@@ -150,4 +150,29 @@ enum VastAIClient {
 
         return try JSONDecoder().decode(VastUserInfo.self, from: data)
     }
+
+    /// Upload local SSH public key to Vast.ai account
+    static func uploadSSHKey(_ sshKey: String) async throws {
+        guard let apiKey = VastAIKeychain.load() else {
+            throw VastError.missingAPIKey
+        }
+
+        guard let url = URL(string: "\(baseURL)/ssh/?api_key=\(apiKey)") else {
+            throw VastError.invalidResponse
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body = ["ssh_key": sshKey]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? ""
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 500
+            throw VastError.apiError(status: status, message: msg)
+        }
+    }
 }
