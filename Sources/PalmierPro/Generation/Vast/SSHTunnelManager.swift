@@ -38,6 +38,7 @@ final class SSHTunnelManager: ObservableObject {
         remotePort: Int = 8188,
         localPort: Int = 8188
     ) {
+        SSHTunnelManager.killStaleSSHProcesses(localPort: localPort)
         disconnect()
 
         self.activeLocalPort = localPort
@@ -79,6 +80,27 @@ final class SSHTunnelManager: ObservableObject {
             self.state = .failed(reason: "Failed to launch SSH: \(error.localizedDescription)")
         }
     }
+
+    /// Kill any stale SSH processes holding the given local port (e.g. leftover from a previous run)
+    private static func killStaleSSHProcesses(localPort: Int) {
+        let lsof = Process()
+        lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        lsof.arguments = ["-t", "-i", ":\(localPort)"]
+        let pipe = Pipe()
+        lsof.standardOutput = pipe
+        lsof.standardError = FileHandle.nullDevice
+        try? lsof.run()
+        lsof.waitUntilExit()
+        let out = pipe.fileHandleForReading.readDataToEndOfFile()
+        let pids = String(data: out, encoding: .utf8)?
+            .components(separatedBy: .newlines)
+            .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) } ?? []
+        for pid in pids {
+            kill(pid_t(pid), SIGTERM)
+            print("[ssh-tunnel] NOTICE: Killed stale SSH process (pid \(pid)) holding port \(localPort)")
+        }
+    }
+
 
     /// Disconnect current SSH Local Tunnel
     func disconnect() {
