@@ -175,4 +175,87 @@ enum VastAIClient {
             throw VastError.apiError(status: status, message: msg)
         }
     }
+
+    struct VastOffer: Decodable {
+        let id: Int
+        let gpu_name: String?
+        let dph_total: Double?
+    }
+
+    struct SearchOffersResponse: Decodable {
+        let offers: [VastOffer]
+    }
+
+    /// Search cheapest available offer for requested GPU type
+    static func searchBestOffer(gpuType: String) async throws -> VastOffer {
+        guard let apiKey = VastAIKeychain.load() else {
+            throw VastError.missingAPIKey
+        }
+
+        guard let url = URL(string: "\(baseURL)/bundles/?api_key=\(apiKey)") else {
+            throw VastError.invalidResponse
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var body: [String: Any] = [
+            "verified": ["eq": true],
+            "external": ["eq": false],
+            "rentable": ["eq": true],
+            "rented": ["eq": false],
+            "order": [["dph_total", "asc"]],
+            "type": "on-demand",
+            "allocated_storage": 40
+        ]
+
+        if gpuType != "ANY" {
+            body["gpu_name"] = ["eq": gpuType]
+        }
+
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? ""
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 500
+            throw VastError.apiError(status: status, message: msg)
+        }
+
+        let decoded = try JSONDecoder().decode(SearchOffersResponse.self, from: data)
+        guard let best = decoded.offers.first else {
+            throw VastError.apiError(status: 404, message: "No available GPU offers found for \(gpuType)")
+        }
+        return best
+    }
+
+    /// Rent and launch instance for specified offer ID
+    static func createInstance(offerId: Int, image: String = "vastai/comfy:@vastai-automatic-tag", diskGb: Int = 40) async throws {
+        guard let apiKey = VastAIKeychain.load() else {
+            throw VastError.missingAPIKey
+        }
+
+        guard let url = URL(string: "\(baseURL)/asks/\(offerId)/?api_key=\(apiKey)") else {
+            throw VastError.invalidResponse
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "client_id": "me",
+            "image": image,
+            "disk": diskGb
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? ""
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 500
+            throw VastError.apiError(status: status, message: msg)
+        }
+    }
 }

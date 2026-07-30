@@ -337,12 +337,20 @@ struct VastAIPane: View {
     private func launchInstance() {
         isDeploying = true
         deployError = nil
+        let targetGPU = selectedGPUType
         Task {
-            // Simulated launch request or search offers
-            try? await Task.sleep(for: .seconds(2))
-            await MainActor.run {
-                self.isDeploying = false
-                self.refreshData()
+            do {
+                let offer = try await VastAIClient.searchBestOffer(gpuType: targetGPU)
+                try await VastAIClient.createInstance(offerId: offer.id)
+                await MainActor.run {
+                    self.isDeploying = false
+                    self.refreshData()
+                }
+            } catch {
+                await MainActor.run {
+                    self.deployError = error.localizedDescription
+                    self.isDeploying = false
+                }
             }
         }
     }
