@@ -197,7 +197,7 @@ enum VastAIClient {
     }
 
     /// Search cheapest available offer for requested GPU type
-    static func searchBestOffer(gpuType: String, region: String = "ANY") async throws -> VastOffer {
+    static func searchBestOffer(gpuType: String, region: String = "ANY", strategy: String = "dlperf") async throws -> VastOffer {
         guard let apiKey = VastAIKeychain.load() else {
             print("[vast-ai] ERROR: Vast.ai API key is missing")
             throw VastError.missingAPIKey
@@ -216,10 +216,18 @@ enum VastAIClient {
             "external": ["eq": false],
             "rentable": ["eq": true],
             "rented": ["eq": false],
-            "order": [["dph_total", "asc"]],
             "type": "on-demand",
             "allocated_storage": 40
         ]
+
+        if strategy == "price" {
+            body["order"] = [["dph_total", "asc"]]
+        } else if strategy == "reliability" {
+            body["order"] = [["reliability2", "desc"], ["dph_total", "asc"]]
+            body["reliability2"] = ["gte": 0.99]
+        } else {
+            body["order"] = [["dlperf_per_dphtotal", "desc"]]
+        }
 
         if gpuType != "ANY" {
             body["gpu_name"] = ["eq": gpuType]

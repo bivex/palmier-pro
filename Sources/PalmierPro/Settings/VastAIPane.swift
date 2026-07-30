@@ -14,6 +14,7 @@ struct VastAIPane: View {
     @State private var selectedModelTemplate = "flux-schnell"
     @State private var selectedGPUType = "RTX 4090"
     @State private var selectedRegion = "ANY"
+    @State private var selectedStrategy = "dlperf"
 
     @ObservedObject private var tunnelManager = SSHTunnelManager.shared
 
@@ -35,6 +36,12 @@ struct VastAIPane: View {
         ("US", "North America (US / Canada)"),
         ("EU", "Europe (EU / DE / SE / UK / FR)"),
         ("ASIA", "Asia & Pacific (JP / KR / SG / HK)")
+    ]
+
+    private let strategyOptions = [
+        ("dlperf", "⚡ Best Performance per $1 (Max DLPerf) — Recommended"),
+        ("price", "🏷️ Lowest Price (Cheapest hourly rate)"),
+        ("reliability", "🛡️ Ultra Reliability (99%+ Uptime & Datacenter)")
     ]
 
     @State private var manualSSHCommand = ""
@@ -196,6 +203,19 @@ struct VastAIPane: View {
                     Picker("", selection: $selectedRegion) {
                         ForEach(regionOptions, id: \.0) { reg in
                             Text(reg.1).tag(reg.0)
+                        }
+                    }
+                    .labelsHidden()
+                }
+
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text("Rental Strategy & Optimization")
+                        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+
+                    Picker("", selection: $selectedStrategy) {
+                        ForEach(strategyOptions, id: \.0) { strat in
+                            Text(strat.1).tag(strat.0)
                         }
                     }
                     .labelsHidden()
@@ -423,9 +443,10 @@ struct VastAIPane: View {
         deployError = nil
         let targetGPU = selectedGPUType
         let targetRegion = selectedRegion
+        let targetStrategy = selectedStrategy
         Task {
             do {
-                let offer = try await VastAIClient.searchBestOffer(gpuType: targetGPU, region: targetRegion)
+                let offer = try await VastAIClient.searchBestOffer(gpuType: targetGPU, region: targetRegion, strategy: targetStrategy)
                 try await VastAIClient.createInstance(offerId: offer.id)
 
                 try? await Task.sleep(for: .seconds(2))
