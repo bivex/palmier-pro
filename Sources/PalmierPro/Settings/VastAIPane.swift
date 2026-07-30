@@ -214,14 +214,29 @@ struct VastAIPane: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(inst.isRunning ? Color.green : Color.orange)
+                        .fill(inst.isRunning ? Color.green : (inst.isLoading ? Color.orange : Color.gray))
                         .frame(width: 8, height: 8)
                     Text(inst.displayName)
                         .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                         .foregroundStyle(AppTheme.Text.primaryColor)
+                    
+                    if inst.isLoading {
+                        Text("⏳ BOOTING UP")
+                            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
+                            .foregroundStyle(Color.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
                 }
 
-                if let host = inst.ssh_host, let port = inst.ssh_port {
+                if inst.isLoading {
+                    Text(inst.status_msg ?? "Downloading Docker image (ComfyUI)...")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .lineLimit(1)
+                } else if let host = inst.ssh_host, let port = inst.ssh_port {
                     Text("SSH: root@\(host):\(port)")
                         .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)

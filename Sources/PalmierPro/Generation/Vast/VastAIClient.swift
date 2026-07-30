@@ -30,11 +30,16 @@ enum VastAIClient {
         let ssh_host: String?
         let ssh_port: Int?
         let cur_state: String?
+        let status_msg: String?
         let direct_port_start: Int?
         let direct_port_end: Int?
 
         var isRunning: Bool {
-            (actual_status == "running" || cur_state == "running")
+            actual_status == "running"
+        }
+
+        var isLoading: Bool {
+            actual_status == "loading" || (actual_status != "running" && actual_status != "stopped")
         }
 
         var displayName: String {
