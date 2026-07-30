@@ -42,6 +42,7 @@ final class SSHTunnelManager: ObservableObject {
 
         self.activeLocalPort = localPort
         self.state = .connecting(host: sshHost, port: sshPort, localPort: localPort)
+        print("[ssh-tunnel] NOTICE: Connecting SSH Local Tunnel to root@\(sshHost):\(sshPort) (forwarding 127.0.0.1:\(localPort))...")
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")

@@ -374,9 +374,18 @@ struct VastAIPane: View {
             do {
                 let offer = try await VastAIClient.searchBestOffer(gpuType: targetGPU)
                 try await VastAIClient.createInstance(offerId: offer.id)
+
+                try? await Task.sleep(for: .seconds(2))
+                let insts = (try? await VastAIClient.listInstances()) ?? []
+
                 await MainActor.run {
+                    self.vastInstances = insts
                     self.isDeploying = false
-                    self.refreshData()
+
+                    if let newInst = insts.first, let host = newInst.ssh_host, let port = newInst.ssh_port {
+                        print("[ssh-tunnel] NOTICE: Auto-initiating SSH Local Tunnel connection for newly rented instance #\(newInst.id) (root@\(host):\(port))...")
+                        SSHTunnelManager.shared.connect(sshHost: host, sshPort: port, remotePort: 8188, localPort: 8188)
+                    }
                 }
             } catch {
                 await MainActor.run {
