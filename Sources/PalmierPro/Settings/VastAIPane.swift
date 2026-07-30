@@ -37,6 +37,12 @@ struct VastAIPane: View {
         ("ASIA", "Asia & Pacific (JP / KR / SG / HK)")
     ]
 
+    @State private var manualSSHCommand = ""
+    @State private var manualHost = ""
+    @State private var manualPort = ""
+    @State private var customHosts: [Int: String] = [:]
+    @State private var customPorts: [Int: String] = [:]
+
     @State private var autoRefreshTask: Task<Void, Never>?
 
     var body: some View {
@@ -46,6 +52,7 @@ struct VastAIPane: View {
                 accountHeaderCard
                 quickLaunchSection
                 activeInstancesSection
+                manualSSHSection
             }
         }
         .onAppear {
@@ -240,7 +247,11 @@ struct VastAIPane: View {
     }
 
     private func instanceCard(_ inst: VastAIClient.VastInstance) -> some View {
-        HStack(spacing: AppTheme.Spacing.md) {
+        let currentHost = customHosts[inst.id] ?? inst.ssh_host ?? ""
+        let currentPortStr = customPorts[inst.id] ?? (inst.ssh_port != nil ? String(inst.ssh_port!) : "")
+        let currentPort = Int(currentPortStr.trimmingCharacters(in: .whitespaces)) ?? (inst.ssh_port ?? 0)
+
+        return HStack(spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Circle()
@@ -266,24 +277,44 @@ struct VastAIPane: View {
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                         .lineLimit(1)
-                } else if let host = inst.ssh_host, let port = inst.ssh_port {
-                    Text("SSH: root@\(host):\(port)")
+                } else {
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        Text("Host:")
+                            .font(.system(size: AppTheme.FontSize.xxs))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        TextField("Host", text: Binding(
+                            get: { customHosts[inst.id] ?? inst.ssh_host ?? "" },
+                            set: { customHosts[inst.id] = $0 }
+                        ))
+                        .textFieldStyle(.plain)
                         .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        .frame(width: 140)
+
+                        Text("Port:")
+                            .font(.system(size: AppTheme.FontSize.xxs))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        TextField("Port", text: Binding(
+                            get: { customPorts[inst.id] ?? (inst.ssh_port != nil ? String(inst.ssh_port!) : "") },
+                            set: { customPorts[inst.id] = $0 }
+                        ))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                        .frame(width: 60)
+                    }
                 }
             }
 
             Spacer()
 
-            if let host = inst.ssh_host, let port = inst.ssh_port {
-                if case .connected(let h, let p, _) = tunnelManager.state, h == host && p == port {
+            if !currentHost.isEmpty && currentPort > 0 {
+                if case .connected(let h, let p, _) = tunnelManager.state, h == currentHost && p == currentPort {
                     Button("Disconnect Tunnel") {
                         tunnelManager.disconnect()
                     }
                     .buttonStyle(.capsule(.secondary, size: .small))
                 } else {
                     Button("Connect SSH Tunnel") {
-                        tunnelManager.connect(sshHost: host, sshPort: port, remotePort: 8188, localPort: 8188)
+                        tunnelManager.connect(sshHost: currentHost, sshPort: currentPort, remotePort: 8188, localPort: 8188)
                     }
                     .buttonStyle(.capsule(.prominent, size: .small))
                 }
@@ -445,6 +476,104 @@ struct VastAIPane: View {
                         self.vastInstances = insts
                     }
                 }
+            }
+        }
+    }
+
+    private var manualSSHSection: some View {
+        SettingsSection(title: "Connect via Custom / Direct SSH Command") {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Text("Paste full SSH command (e.g. ssh -p 50189 root@92.138.166.13 -L 8080:localhost:8080) to auto-fill Host and Port:")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+
+                TextField("ssh -p 13796 root@ssh4.vast.ai", text: $manualSSHCommand)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                    .padding(.horizontal, AppTheme.Spacing.xs)
+                    .padding(.vertical, 6)
+                    .background(AppTheme.Background.surfaceColor)
+                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xs))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.xs)
+                            .stroke(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.hairline)
+                    )
+                    .onChange(of: manualSSHCommand) { _, newValue in
+                        parseAndSetSSHCommand(newValue)
+                    }
+
+                HStack(spacing: AppTheme.Spacing.md) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        Text("Host:")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                            .foregroundStyle(AppTheme.Text.secondaryColor)
+                        TextField("ssh4.vast.ai or IP", text: $manualHost)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                            .frame(width: 140)
+                            .padding(.horizontal, AppTheme.Spacing.xs)
+                            .padding(.vertical, 4)
+                            .background(AppTheme.Background.surfaceColor)
+                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xs))
+                    }
+
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        Text("Port:")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                            .foregroundStyle(AppTheme.Text.secondaryColor)
+                        TextField("13796", text: $manualPort)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                            .frame(width: 70)
+                            .padding(.horizontal, AppTheme.Spacing.xs)
+                            .padding(.vertical, 4)
+                            .background(AppTheme.Background.surfaceColor)
+                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xs))
+                    }
+
+                    Spacer()
+
+                    let targetHost = manualHost.trimmingCharacters(in: .whitespaces)
+                    let targetPort = Int(manualPort.trimmingCharacters(in: .whitespaces)) ?? 0
+
+                    if case .connected(let h, let p, _) = tunnelManager.state, h == targetHost && p == targetPort {
+                        Button("Disconnect") {
+                            tunnelManager.disconnect()
+                        }
+                        .buttonStyle(.capsule(.secondary, size: .small))
+                    } else {
+                        Button("Connect Custom SSH") {
+                            guard !targetHost.isEmpty, targetPort > 0 else { return }
+                            tunnelManager.connect(sshHost: targetHost, sshPort: targetPort, remotePort: 8188, localPort: 8188)
+                        }
+                        .buttonStyle(.capsule(.prominent, size: .small))
+                        .disabled(targetHost.isEmpty || targetPort == 0)
+                    }
+                }
+            }
+        }
+    }
+
+    private func parseAndSetSSHCommand(_ input: String) {
+        let str = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !str.isEmpty else { return }
+
+        if str.contains("-p") {
+            let tokens = str.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            for (idx, token) in tokens.enumerated() {
+                if token == "-p", idx + 1 < tokens.count {
+                    manualPort = tokens[idx + 1]
+                }
+                if token.contains("@") {
+                    manualHost = token.components(separatedBy: "@").last ?? token
+                }
+            }
+        } else if str.contains(":") {
+            let parts = str.components(separatedBy: ":")
+            if parts.count == 2 {
+                let h = parts[0].contains("@") ? parts[0].components(separatedBy: "@").last! : parts[0]
+                manualHost = h
+                manualPort = parts[1]
             }
         }
     }
