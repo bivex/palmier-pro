@@ -180,6 +180,11 @@ enum VastAIClient {
         let id: Int
         let gpu_name: String?
         let dph_total: Double?
+
+        var formattedPrice: String {
+            guard let dph_total else { return "$0.00/hr" }
+            return String(format: "$%.2f/hr", dph_total)
+        }
     }
 
     struct SearchOffersResponse: Decodable {
@@ -189,6 +194,7 @@ enum VastAIClient {
     /// Search cheapest available offer for requested GPU type
     static func searchBestOffer(gpuType: String) async throws -> VastOffer {
         guard let apiKey = VastAIKeychain.load() else {
+            print("[vast-ai] ERROR: Vast.ai API key is missing")
             throw VastError.missingAPIKey
         }
 
@@ -220,25 +226,32 @@ enum VastAIClient {
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let msg = String(data: data, encoding: .utf8) ?? ""
             let status = (response as? HTTPURLResponse)?.statusCode ?? 500
+            print("[vast-ai] ERROR: Search offers failed (\(status)): \(msg)")
             throw VastError.apiError(status: status, message: msg)
         }
 
         let decoded = try JSONDecoder().decode(SearchOffersResponse.self, from: data)
         guard let best = decoded.offers.first else {
+            print("[vast-ai] WARN: No GPU offers found matching search filter: '\(gpuType)'")
             throw VastError.apiError(status: 404, message: "No available GPU offers found for \(gpuType)")
         }
+
+        print("[vast-ai] NOTICE: Found \(decoded.offers.count) offers for '\(gpuType)'. Selected best offer #\(best.id) (\(best.gpu_name ?? "GPU") @ \(best.formattedPrice))")
         return best
     }
 
     /// Rent and launch instance for specified offer ID
     static func createInstance(offerId: Int, image: String = "vastai/comfy:@vastai-automatic-tag", diskGb: Int = 40) async throws {
         guard let apiKey = VastAIKeychain.load() else {
+            print("[vast-ai] ERROR: Cannot create instance — missing API key")
             throw VastError.missingAPIKey
         }
 
         guard let url = URL(string: "\(baseURL)/asks/\(offerId)/?api_key=\(apiKey)") else {
             throw VastError.invalidResponse
         }
+
+        print("[vast-ai] NOTICE: Submitting GPU rental request for offer #\(offerId) (image: \(image), disk: \(diskGb)GB)...")
 
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
@@ -255,7 +268,10 @@ enum VastAIClient {
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let msg = String(data: data, encoding: .utf8) ?? ""
             let status = (response as? HTTPURLResponse)?.statusCode ?? 500
+            print("[vast-ai] ERROR: Failed to rent offer #\(offerId) (\(status)): \(msg)")
             throw VastError.apiError(status: status, message: msg)
         }
+
+        print("[vast-ai] NOTICE: Offer #\(offerId) rented successfully! Container starting up.")
     }
 }
