@@ -96,17 +96,20 @@ final class SSHTunnelManager: ObservableObject {
         healthCheckTask?.cancel()
         healthCheckTask = Task { @MainActor [weak self] in
             for attempt in 1...90 {
+                if attempt % 5 == 1 {
+                    print("[ssh-tunnel] NOTICE: Waiting for container server startup (attempt \(attempt)/90, ~3 min total)...")
+                }
                 try? await Task.sleep(for: .seconds(3))
                 guard let self else { return }
 
                 if await checkPortResponsive(localPort: localPort) {
                     self.state = .connected(host: host, port: port, localPort: localPort)
-                    print("[ssh-tunnel] NOTICE: SSH Local Tunnel connected successfully! Port \(localPort) -> root@\(host):\(port) is READY")
+                    print("[ssh-tunnel] NOTICE: SSH Local Tunnel CONNECTED successfully! http://127.0.0.1:\(localPort) is READY 🟢")
                     return
                 }
 
                 if let proc = self.process, !proc.isRunning {
-                    print("[ssh-tunnel] NOTICE: Container SSH starting up (attempt \(attempt)/90). Retrying connection...")
+                    print("[ssh-tunnel] NOTICE: Container SSH process exited (attempt \(attempt)/90). Retrying connection...")
                     self.state = .connecting(host: host, port: port, localPort: localPort)
                     self.restartSSHProcess(localPort: localPort, host: host, port: port)
                 }
@@ -114,7 +117,8 @@ final class SSHTunnelManager: ObservableObject {
 
             guard let self else { return }
             if case .connecting = self.state {
-                self.state = .failed(reason: "SSH connection timed out. Container entrypoint script takes ~3 minutes on first boot.")
+                self.state = .failed(reason: "SSH connection timed out after 4.5 minutes. Container entrypoint script takes ~3 minutes on first boot.")
+                print("[ssh-tunnel] ERROR: Connection timed out after 90 attempts.")
             }
         }
     }
@@ -167,7 +171,7 @@ final class SSHTunnelManager: ObservableObject {
             var req = URLRequest(url: url)
             req.timeoutInterval = 1.5
             if let (_, resp) = try? await URLSession.shared.data(for: req),
-               let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+               let http = resp as? HTTPURLResponse, (200...499).contains(http.statusCode) {
                 return true
             }
         }
