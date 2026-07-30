@@ -59,6 +59,8 @@ final class SSHTunnelManager: ObservableObject {
             args.append(contentsOf: ["-i", keyPath, "-o", "IdentitiesOnly=yes"])
         }
         proc.arguments = args
+        proc.standardError = FileHandle.nullDevice
+        proc.standardOutput = FileHandle.nullDevice
 
         proc.terminationHandler = { [weak self] p in
             Task { @MainActor in
@@ -135,6 +137,8 @@ final class SSHTunnelManager: ObservableObject {
             args.append(contentsOf: ["-i", keyPath, "-o", "IdentitiesOnly=yes"])
         }
         proc.arguments = args
+        proc.standardError = FileHandle.nullDevice
+        proc.standardOutput = FileHandle.nullDevice
 
         proc.terminationHandler = { [weak self] p in
             Task { @MainActor in
