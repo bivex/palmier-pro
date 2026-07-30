@@ -48,7 +48,7 @@ final class SSHTunnelManager: ObservableObject {
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         var args = [
             "-N",
-            "-L", "\(localPort):[::1]:8188",
+            "-L", "\(localPort):127.0.0.1:18188",
             "-p", "\(sshPort)",
             "root@\(sshHost)",
             "-o", "StrictHostKeyChecking=no",
@@ -128,7 +128,7 @@ final class SSHTunnelManager: ObservableObject {
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         var args = [
             "-N",
-            "-L", "\(localPort):[::1]:8188",
+            "-L", "\(localPort):127.0.0.1:18188",
             "-p", "\(port)",
             "root@\(host)",
             "-o", "StrictHostKeyChecking=no",
