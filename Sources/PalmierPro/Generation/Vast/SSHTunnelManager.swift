@@ -55,8 +55,30 @@ final class SSHTunnelManager: ObservableObject {
         self.lastSshError = nil
         print("[ssh-tunnel] NOTICE: Connecting SSH Local Tunnel to root@\(sshHost):\(sshPort) (forwarding 127.0.0.1:\(localPort))...")
 
+        ensureRemoteInitStarted(host: sshHost, port: sshPort)
         launchSSHProcess(localPort: localPort, host: sshHost, port: sshPort)
         startHealthCheck(localPort: localPort, host: sshHost, port: sshPort)
+    }
+
+    private func ensureRemoteInitStarted(host: String, port: Int) {
+        Task.detached(priority: .background) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            var args = [
+                "-p", "\(port)",
+                "root@\(host)",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "ConnectTimeout=5",
+                "pgrep -f init.sh >/dev/null || nohup bash /opt/ai-dock/bin/init.sh > /var/log/ai-dock-init.log 2>&1 &"
+            ]
+            let keyPaths = SSHTunnelManager.findAllPrivateKeyPaths()
+            for keyPath in keyPaths {
+                args.append(contentsOf: ["-i", keyPath])
+            }
+            proc.arguments = args
+            try? proc.run()
+        }
     }
 
     private func launchSSHProcess(localPort: Int, host: String, port: Int) {
