@@ -32,6 +32,7 @@ struct ModelsPane: View {
     @State private var hasVastKey = false
     @State private var maskedVastKey = ""
     @State private var vastInstances: [VastAIClient.VastInstance] = []
+    @State private var vastUserInfo: VastAIClient.VastUserInfo?
     @State private var isLoadingVastInstances = false
     @ObservedObject private var tunnelManager = SSHTunnelManager.shared
 
@@ -202,6 +203,28 @@ struct ModelsPane: View {
                         .font(.system(size: AppTheme.FontSize.xs))
                 }
                 .buttonStyle(.plain)
+            }
+
+            if let info = vastUserInfo {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    if let user = info.username, !user.isEmpty {
+                        Text("Account: \(user)")
+                            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.medium))
+                            .foregroundStyle(AppTheme.Text.secondaryColor)
+                    }
+                    if let balance = info.credit {
+                        Text(String(format: "Balance: $%.2f", balance))
+                            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(balance > 0 ? Color.green : AppTheme.Text.tertiaryColor)
+                    }
+                    Text(info.ssh_key != nil ? "SSH: Configured ✓" : "SSH: Missing ✗")
+                        .font(.system(size: AppTheme.FontSize.xxs))
+                        .foregroundStyle(info.ssh_key != nil ? Color.green : Color.orange)
+                }
+                .padding(.horizontal, AppTheme.Spacing.xs)
+                .padding(.vertical, 2)
+                .background(AppTheme.Background.surfaceColor)
+                .clipShape(Capsule())
             }
 
             tunnelStatusHeader
@@ -377,9 +400,15 @@ struct ModelsPane: View {
         isLoadingVastInstances = true
         Task {
             do {
-                let insts = try await VastAIClient.listInstances()
+                async let instsTask = VastAIClient.listInstances()
+                async let infoTask = VastAIClient.fetchUserInfo()
+
+                let insts = try await instsTask
+                let info = try? await infoTask
+
                 await MainActor.run {
                     self.vastInstances = insts
+                    self.vastUserInfo = info
                     self.isLoadingVastInstances = false
                 }
             } catch {

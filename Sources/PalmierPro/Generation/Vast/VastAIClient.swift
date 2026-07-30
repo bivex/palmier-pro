@@ -121,4 +121,33 @@ enum VastAIClient {
             throw VastError.apiError(status: status, message: msg)
         }
     }
+
+    struct VastUserInfo: Decodable {
+        let username: String?
+        let credit: Double?
+        let ssh_key: String?
+    }
+
+    /// Fetch current user account info (email, balance, ssh key status)
+    static func fetchUserInfo() async throws -> VastUserInfo {
+        guard let apiKey = VastAIKeychain.load() else {
+            throw VastError.missingAPIKey
+        }
+
+        guard let url = URL(string: "\(baseURL)/users/current/?api_key=\(apiKey)") else {
+            throw VastError.invalidResponse
+        }
+
+        var req = URLRequest(url: url)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? ""
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 500
+            throw VastError.apiError(status: status, message: msg)
+        }
+
+        return try JSONDecoder().decode(VastUserInfo.self, from: data)
+    }
 }
