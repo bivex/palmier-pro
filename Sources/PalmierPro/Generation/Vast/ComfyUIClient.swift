@@ -75,19 +75,24 @@ enum ComfyUIClient {
             throw NSError(domain: "ComfyUIClient", code: -5, userInfo: [NSLocalizedDescriptionKey: "No model checkpoints found on ComfyUI server. Call manage_vast action='download_model' to download a standard SD 1.5 checkpoint."])
         }
 
+        let isFluxModel = selectedCheckpoint.lowercased().contains("flux")
+        let cfgValue: Double = isFluxModel ? 1.0 : 7.0
+        let samplerName: String = isFluxModel ? "euler" : "euler_ancestral"
+        let schedulerName: String = isFluxModel ? "simple" : "normal"
+
         // Standard ComfyUI API workflow definition
         let workflow: [String: Any] = [
             "3": [
                 "class_type": "KSampler",
                 "inputs": [
-                    "cfg": 7.0,
+                    "cfg": cfgValue,
                     "denoise": 1.0,
                     "latent_image": ["5", 0],
                     "model": ["4", 0],
                     "negative": ["7", 0],
                     "positive": ["6", 0],
-                    "sampler_name": "euler_ancestral",
-                    "scheduler": "normal",
+                    "sampler_name": samplerName,
+                    "scheduler": schedulerName,
                     "seed": seed,
                     "steps": 20
                 ]
