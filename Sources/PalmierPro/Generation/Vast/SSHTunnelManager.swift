@@ -106,24 +106,27 @@ final class SSHTunnelManager: ObservableObject {
         }
     }
 
-    /// Kill any stale SSH processes holding the given local port (e.g. leftover from a previous run)
+    /// Kill any stale SSH processes holding local forwarding ports (e.g. 8188, 8080)
     private static func killStaleSSHProcesses(localPort: Int, excludePid: Int32? = nil) {
-        let lsof = Process()
-        lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        lsof.arguments = ["-t", "-i", ":\(localPort)"]
-        let pipe = Pipe()
-        lsof.standardOutput = pipe
-        lsof.standardError = FileHandle.nullDevice
-        try? lsof.run()
-        lsof.waitUntilExit()
-        let out = pipe.fileHandleForReading.readDataToEndOfFile()
-        let pids = String(data: out, encoding: .utf8)?
-            .components(separatedBy: .newlines)
-            .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) } ?? []
-        for pid in pids {
-            if let excludePid, Int32(pid) == excludePid { continue }
-            kill(pid_t(pid), SIGTERM)
-            print("[ssh-tunnel] NOTICE: Killed stale SSH process (pid \(pid)) holding port \(localPort)")
+        let portsToClear = Set([localPort, 8188, 8080])
+        for port in portsToClear {
+            let lsof = Process()
+            lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+            lsof.arguments = ["-t", "-i", ":\(port)"]
+            let pipe = Pipe()
+            lsof.standardOutput = pipe
+            lsof.standardError = FileHandle.nullDevice
+            try? lsof.run()
+            lsof.waitUntilExit()
+            let out = pipe.fileHandleForReading.readDataToEndOfFile()
+            let pids = String(data: out, encoding: .utf8)?
+                .components(separatedBy: .newlines)
+                .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) } ?? []
+            for pid in pids {
+                if let excludePid, Int32(pid) == excludePid { continue }
+                kill(pid_t(pid), SIGTERM)
+                print("[ssh-tunnel] NOTICE: Killed stale SSH process (pid \(pid)) holding port \(port)")
+            }
         }
     }
 
