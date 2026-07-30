@@ -65,8 +65,9 @@ enum ToolName: String, CaseIterable, Sendable {
     case generateAudio = "generate_audio"
     case upscaleMedia = "upscale_media"
 
-    // Vast.ai GPU Cloud
+    // Vast.ai GPU Cloud & Remote Execution
     case manageVast = "manage_vast"
+    case runCommand = "run_command"
 
     // Meta
     case sendFeedback = "send_feedback"
@@ -1029,15 +1030,16 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .manageVast,
-            description: "Check status, view user instances, connect SSH tunnel, download model checkpoints, or generate images via ComfyUI on the user's Vast.ai GPU instance over SSH tunnel! Set `action` to: `status` (default — check active instances, SSH tunnel connection, ComfyUI readiness, and installed checkpoints); `list_instances` (list user's Vast.ai instances and their status/SSH details); `connect_tunnel` (connect SSH tunnel to user's running instance, optional `instanceId`); `download_model` (download a model checkpoint safetensors file directly into the container over SSH, optional `url` and `modelName`); `generate_image` (generate AI image using ComfyUI on the connected GPU instance over SSH tunnel, downloads generated PNG to local project, takes `prompt`, optional `width` and `height`).",
+            description: "Check status, view user instances, connect SSH tunnel, download model checkpoints, execute SSH bash commands, or generate images via ComfyUI on the user's Vast.ai GPU instance over SSH tunnel! Set `action` to: `status` (default — check active instances, SSH tunnel connection, ComfyUI readiness, and installed checkpoints); `list_instances` (list user's Vast.ai instances and their status/SSH details); `connect_tunnel` (connect SSH tunnel to user's running instance, optional `instanceId`); `download_model` (download a model checkpoint safetensors file directly into the container over SSH, optional `url` and `modelName`); `run_command` (execute a bash command via SSH on the GPU instance, takes `command`); `generate_image` (generate AI image using ComfyUI on the connected GPU instance over SSH tunnel, downloads generated PNG to local project, takes `prompt`, optional `width` and `height`).",
             inputSchema: objectSchema(
                 properties: [
                     "action": [
                         "type": "string",
-                        "enum": ["status", "list_instances", "connect_tunnel", "download_model", "generate_image"],
+                        "enum": ["status", "list_instances", "connect_tunnel", "download_model", "run_command", "generate_image"],
                         "description": "Vast.ai operation to perform."
                     ],
-                    "instanceId": ["type": "integer", "description": "Optional specific instance ID to target for connect_tunnel or download_model."],
+                    "instanceId": ["type": "integer", "description": "Optional specific instance ID to target."],
+                    "command": ["type": "string", "description": "Bash command string to execute on the GPU instance for run_command."],
                     "url": ["type": "string", "description": "Optional direct model download URL for download_model."],
                     "modelName": ["type": "string", "description": "Optional target filename for download_model (e.g. 'v1-5-pruned-emaonly.safetensors')."],
                     "prompt": ["type": "string", "description": "Prompt for generate_image."],
@@ -1045,6 +1047,17 @@ enum ToolDefinitions {
                     "height": ["type": "integer", "description": "Height for generate_image (default 1024)."],
                     "name": ["type": "string", "description": "Optional name for generated image asset."]
                 ]
+            )
+        ),
+        AgentTool(
+            name: .runCommand,
+            description: "Execute a bash / shell command directly on the active Vast.ai GPU instance over SSH! Returns stdout, stderr, and exit status. Use to run commands, check files, run nvidia-smi, install python packages, download custom ComfyUI nodes or models, check processes (ps aux, netstat), or debug container issues.",
+            inputSchema: objectSchema(
+                properties: [
+                    "command": ["type": "string", "description": "The bash command line string to execute on the GPU instance."],
+                    "instanceId": ["type": "integer", "description": "Optional specific Vast instance ID to execute on."]
+                ],
+                required: ["command"]
             )
         ),
         AgentTool(

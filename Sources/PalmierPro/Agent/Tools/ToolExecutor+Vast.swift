@@ -105,6 +105,9 @@ extension ToolExecutor {
             }
             return .ok("Initiated SSH Local Tunnel to root@\(host):\(port) (forwarding 127.0.0.1:8188). Check status in a few seconds.")
 
+        case "run_command":
+            return try await runCommand(editor, args)
+
         case "generate_image":
             let prompt = try args.requireString("prompt")
             let width = args.int("width") ?? 1024
@@ -141,7 +144,62 @@ extension ToolExecutor {
             return .ok("Successfully generated image via ComfyUI on GPU! Media asset ID: '\(asset.id)' (\(asset.name)). Use add_clips to place it on the timeline.")
 
         default:
-            throw ToolError("Unknown action '\(action)'. Valid actions: status, list_instances, connect_tunnel, download_model, generate_image")
+            throw ToolError("Unknown action '\(action)'. Valid actions: status, list_instances, connect_tunnel, download_model, run_command, generate_image")
+        }
+    }
+
+    func runCommand(_ editor: EditorViewModel, _ args: [String: Any]) async throws -> ToolResult {
+        let command = try args.requireString("command")
+        let instances = try await VastAIClient.listInstances()
+        let targetInstance: VastAIClient.VastInstance?
+        if let targetId = args.int("instanceId") {
+            targetInstance = instances.first(where: { $0.id == targetId })
+        } else {
+            targetInstance = instances.first(where: { $0.isRunning }) ?? instances.first
+        }
+
+        guard let target = targetInstance,
+              let host = target.ssh_host,
+              let port = target.ssh_port else {
+            throw ToolError("No running Vast.ai instance found with SSH credentials to execute command.")
+        }
+
+        let result = await Task.detached(priority: .utility) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            var sshArgs = [
+                "-p", "\(port)",
+                "root@\(host)",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "ConnectTimeout=10"
+            ]
+            if let keyPath = SSHTunnelManager.findDefaultPrivateKeyPath() {
+                sshArgs.append(contentsOf: ["-i", keyPath])
+            }
+            sshArgs.append(command)
+            proc.arguments = sshArgs
+
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = pipe
+
+            do {
+                try proc.run()
+                proc.waitUntilExit()
+                let outData = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: outData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return (status: proc.terminationStatus, output: output)
+            } catch {
+                return (status: -1, output: error.localizedDescription)
+            }
+        }.value
+
+        if result.status == 0 {
+            let msg = result.output.isEmpty ? "(command completed with no output)" : result.output
+            return .ok("Command output (exit code 0):\n\(msg)")
+        } else {
+            return .error("Command failed (exit code \(result.status)):\n\(result.output)")
         }
     }
 }
