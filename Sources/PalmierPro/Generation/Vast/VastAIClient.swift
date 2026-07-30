@@ -262,11 +262,13 @@ enum VastAIClient {
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        let comfyStartScript = "bash /opt/ai-dock/bin/init.sh >> /var/log/ai-dock-init.log 2>&1 &"
         let body: [String: Any] = [
             "client_id": "me",
             "image": image,
             "disk": diskGb,
-            "runtype": "ssh_direc ssh_proxy"
+            "runtype": "ssh_direc ssh_proxy",
+            "onstart_cmd": comfyStartScript
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
