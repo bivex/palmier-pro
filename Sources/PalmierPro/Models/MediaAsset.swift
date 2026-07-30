@@ -230,6 +230,9 @@ final class MediaAsset: Identifiable {
         let avAsset = AVURLAsset(url: url)
         if type != .video, let d = try? await avAsset.load(.duration) {
             duration = d.seconds
+            if type == .audio {
+                hasAudio = true
+            }
         }
         if type == .video {
             var videoDuration: Double?
