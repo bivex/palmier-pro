@@ -29,10 +29,42 @@ extension ToolExecutor {
                 info["gpus"] = devices
             }
 
+            if isComfyOnline {
+                info["checkpoints"] = await ComfyUIClient.fetchAvailableCheckpoints()
+            }
+
             guard let jsonStr = Self.jsonString(info) else {
                 return .error("Failed to encode Vast status")
             }
             return .ok(jsonStr)
+
+        case "download_model":
+            let instances = try await VastAIClient.listInstances()
+            guard let running = instances.first(where: { $0.isRunning }),
+                  let host = running.ssh_host,
+                  let port = running.ssh_port else {
+                throw ToolError("No running Vast.ai instance found to download model into.")
+            }
+            let modelUrl = args.string("url") ?? "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors"
+            let modelName = args.string("modelName") ?? "v1-5-pruned-emaonly.safetensors"
+
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            var sshArgs = [
+                "-p", "\(port)",
+                "root@\(host)",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null"
+            ]
+            if let keyPath = SSHTunnelManager.findDefaultPrivateKeyPath() {
+                sshArgs.append(contentsOf: ["-i", keyPath])
+            }
+            sshArgs.append("wget -q -O /opt/ComfyUI/models/checkpoints/\(modelName) '\(modelUrl)' &")
+            proc.arguments = sshArgs
+            try? proc.run()
+            proc.waitUntilExit()
+
+            return .ok("Initiated download of model '\(modelName)' into ComfyUI checkpoints folder on root@\(host):\(port). Check status in ~30 seconds.")
 
         case "list_instances":
             let instances = try await VastAIClient.listInstances()
@@ -109,7 +141,7 @@ extension ToolExecutor {
             return .ok("Successfully generated image via ComfyUI on GPU! Media asset ID: '\(asset.id)' (\(asset.name)). Use add_clips to place it on the timeline.")
 
         default:
-            throw ToolError("Unknown action '\(action)'. Valid actions: status, list_instances, connect_tunnel, generate_image")
+            throw ToolError("Unknown action '\(action)'. Valid actions: status, list_instances, connect_tunnel, download_model, generate_image")
         }
     }
 }

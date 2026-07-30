@@ -209,7 +209,7 @@ final class SSHTunnelManager: ObservableObject {
         return false
     }
 
-    private static func findDefaultPrivateKeyPath() -> String? {
+    static func findDefaultPrivateKeyPath() -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             "\(home)/.ssh/id_ed25519",

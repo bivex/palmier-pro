@@ -40,6 +40,24 @@ enum ComfyUIClient {
         }
     }
 
+    /// Fetch list of available checkpoint filenames installed on ComfyUI server
+    static func fetchAvailableCheckpoints() async -> [String] {
+        guard let url = URL(string: "\(baseURL)/object_info/CheckpointLoaderSimple") else { return [] }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let loaderInfo = json["CheckpointLoaderSimple"] as? [String: Any],
+              let inputInfo = loaderInfo["input"] as? [String: Any],
+              let requiredInfo = inputInfo["required"] as? [String: Any],
+              let ckptTuple = requiredInfo["ckpt_name"] as? [Any],
+              let ckptList = ckptTuple.first as? [String] else {
+            return []
+        }
+        return ckptList
+    }
+
     /// Submit a text-to-image prompt workflow to ComfyUI and return generated image file URL
     static func generateImage(
         prompt: String,
@@ -50,6 +68,11 @@ enum ComfyUIClient {
     ) async throws -> URL {
         guard let promptURL = URL(string: "\(baseURL)/prompt") else {
             throw NSError(domain: "ComfyUIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid ComfyUI URL"])
+        }
+
+        let availableCheckpoints = await fetchAvailableCheckpoints()
+        guard let selectedCheckpoint = availableCheckpoints.first else {
+            throw NSError(domain: "ComfyUIClient", code: -5, userInfo: [NSLocalizedDescriptionKey: "No model checkpoints found on ComfyUI server. Call manage_vast action='download_model' to download a standard SD 1.5 checkpoint."])
         }
 
         // Standard ComfyUI API workflow definition
@@ -72,7 +95,7 @@ enum ComfyUIClient {
             "4": [
                 "class_type": "CheckpointLoaderSimple",
                 "inputs": [
-                    "ckpt_name": "v1-5-pruned-emaonly.safetensors"
+                    "ckpt_name": selectedCheckpoint
                 ]
             ],
             "5": [

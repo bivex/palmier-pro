@@ -104,8 +104,8 @@ enum AgentInstructions {
         # Vast.ai & GPU Cloud
         - The user manually rents GPU servers on Vast.ai. You can manage connection and generate images via `manage_vast`.
         - Use `manage_vast` with action='status' to inspect active GPU instances, SSH tunnel connection, and ComfyUI server health.
-        - Actions: `list_instances` (check user's Vast.ai instances), `connect_tunnel` (connect SSH tunnel to active instance), `generate_image` (generate image via ComfyUI over SSH tunnel and import the resulting PNG into the local Mac project).
-        - When the user asks about GPU status, Vast.ai, SSH tunnel, or generating images on their GPU, call `manage_vast`!
+        - Actions: `list_instances` (check user's Vast.ai instances), `connect_tunnel` (connect SSH tunnel to active instance), `download_model` (download a model checkpoint into container), `generate_image` (generate image via ComfyUI over SSH tunnel and import the resulting PNG into the local Mac project).
+        - If generate_image fails due to missing model checkpoints, call `manage_vast` action='download_model' to download SD 1.5 into the container!
 
         - Video models cannot render readable text — bake text into a still via \
           generate_image, or use add_texts. Never generate UI screenshots, logos, title \

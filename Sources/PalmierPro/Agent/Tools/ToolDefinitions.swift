@@ -1029,15 +1029,17 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .manageVast,
-            description: "Check status, view user instances, connect SSH tunnel, or generate images via ComfyUI on the user's Vast.ai GPU instance over SSH tunnel! Set `action` to: `status` (default — check active instances, SSH tunnel connection, and ComfyUI readiness); `list_instances` (list user's Vast.ai instances and their status/SSH details); `connect_tunnel` (connect SSH tunnel to user's running instance, optional `instanceId`); `generate_image` (generate AI image using ComfyUI on the connected GPU instance over SSH tunnel, downloads generated PNG to local project, takes `prompt`, optional `width` and `height`).",
+            description: "Check status, view user instances, connect SSH tunnel, download model checkpoints, or generate images via ComfyUI on the user's Vast.ai GPU instance over SSH tunnel! Set `action` to: `status` (default — check active instances, SSH tunnel connection, ComfyUI readiness, and installed checkpoints); `list_instances` (list user's Vast.ai instances and their status/SSH details); `connect_tunnel` (connect SSH tunnel to user's running instance, optional `instanceId`); `download_model` (download a model checkpoint safetensors file directly into the container over SSH, optional `url` and `modelName`); `generate_image` (generate AI image using ComfyUI on the connected GPU instance over SSH tunnel, downloads generated PNG to local project, takes `prompt`, optional `width` and `height`).",
             inputSchema: objectSchema(
                 properties: [
                     "action": [
                         "type": "string",
-                        "enum": ["status", "list_instances", "connect_tunnel", "generate_image"],
+                        "enum": ["status", "list_instances", "connect_tunnel", "download_model", "generate_image"],
                         "description": "Vast.ai operation to perform."
                     ],
-                    "instanceId": ["type": "integer", "description": "Optional specific instance ID to target for connect_tunnel."],
+                    "instanceId": ["type": "integer", "description": "Optional specific instance ID to target for connect_tunnel or download_model."],
+                    "url": ["type": "string", "description": "Optional direct model download URL for download_model."],
+                    "modelName": ["type": "string", "description": "Optional target filename for download_model (e.g. 'v1-5-pruned-emaonly.safetensors')."],
                     "prompt": ["type": "string", "description": "Prompt for generate_image."],
                     "width": ["type": "integer", "description": "Width for generate_image (default 1024)."],
                     "height": ["type": "integer", "description": "Height for generate_image (default 1024)."],
