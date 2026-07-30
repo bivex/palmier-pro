@@ -260,7 +260,8 @@ enum VastAIClient {
         let body: [String: Any] = [
             "client_id": "me",
             "image": image,
-            "disk": diskGb
+            "disk": diskGb,
+            "runtype": "ssh_direc ssh_proxy"
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
