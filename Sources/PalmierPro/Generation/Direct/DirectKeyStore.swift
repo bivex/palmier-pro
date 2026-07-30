@@ -59,9 +59,10 @@ enum DirectKeyStore {
     static var hasFalKey: Bool { FalAIKeychain.load() != nil }
     static var hasKlingKey: Bool { KlingKeychain.load() != nil }
     static var hasLeonardoKey: Bool { LeonardoKeychain.load() != nil }
+    static var hasVastKey: Bool { VastAIKeychain.load() != nil }
 
     static var hasAnyDirectKey: Bool {
-        hasGoogleKey || hasFalKey || hasKlingKey || hasLeonardoKey
+        hasGoogleKey || hasFalKey || hasKlingKey || hasLeonardoKey || hasVastKey
     }
 
     static func hasKey(for modelId: String) -> Bool {
@@ -75,6 +76,9 @@ enum DirectKeyStore {
         if id.contains("leonardo") {
             return hasLeonardoKey
         }
-        return hasFalKey || hasGoogleKey || hasLeonardoKey || hasAnyDirectKey
+        if id.contains("vast") || id.contains("comfy") {
+            return hasVastKey
+        }
+        return hasFalKey || hasGoogleKey || hasLeonardoKey || hasVastKey || hasAnyDirectKey
     }
 }

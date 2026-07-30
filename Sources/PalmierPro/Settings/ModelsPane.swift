@@ -28,6 +28,13 @@ struct ModelsPane: View {
     @State private var hasLeonardoKey = false
     @State private var maskedLeonardoKey = ""
 
+    @State private var vastKeyDraft = ""
+    @State private var hasVastKey = false
+    @State private var maskedVastKey = ""
+    @State private var vastInstances: [VastAIClient.VastInstance] = []
+    @State private var isLoadingVastInstances = false
+    @ObservedObject private var tunnelManager = SSHTunnelManager.shared
+
     private struct Row: Identifiable {
         let id: String
         let displayName: String
@@ -150,8 +157,129 @@ struct ModelsPane: View {
                 Text("Note: Leonardo API access requires paid API Credits from the Leonardo API Access page (separate from web app free tokens).")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
+
+                Divider().overlay(AppTheme.Border.subtleColor)
+
+                keyInputRow(
+                    label: "Vast.ai API Key (Cloud GPU & ComfyUI SSH Tunnel)",
+                    placeholder: "vast_key_...",
+                    hasKey: hasVastKey,
+                    maskedKey: maskedVastKey,
+                    draft: $vastKeyDraft,
+                    onSave: {
+                        let trimmed = vastKeyDraft.trimmingCharacters(in: .whitespaces)
+                        if !trimmed.isEmpty {
+                            VastAIKeychain.save(trimmed)
+                            vastKeyDraft = ""
+                            refreshKeys()
+                            fetchVastInstances()
+                        }
+                    },
+                    onRemove: {
+                        VastAIKeychain.delete()
+                        refreshKeys()
+                        vastInstances = []
+                    }
+                )
+
+                if hasVastKey {
+                    vastInstancesSection
+                }
             }
             .padding(.vertical, AppTheme.Spacing.xs)
+        }
+    }
+
+    private var vastInstancesSection: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            HStack {
+                Text("Vast.ai Instances & SSH Local Tunnel")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                Spacer()
+                Button(action: fetchVastInstances) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                }
+                .buttonStyle(.plain)
+            }
+
+            tunnelStatusHeader
+
+            if vastInstances.isEmpty {
+                Text(isLoadingVastInstances ? "Loading instances..." : "No active Vast.ai instances found.")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            } else {
+                ForEach(vastInstances) { inst in
+                    vastInstanceRow(inst)
+                }
+            }
+        }
+    }
+
+    private func vastInstanceRow(_ inst: VastAIClient.VastInstance) -> some View {
+        HStack(spacing: AppTheme.Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(inst.displayName)
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                if let host = inst.ssh_host, let port = inst.ssh_port {
+                    Text("\(host):\(port)")
+                        .font(.system(size: AppTheme.FontSize.xxs, design: .monospaced))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                }
+            }
+            Spacer()
+            if let host = inst.ssh_host, let port = inst.ssh_port {
+                if case .connected(let h, let p, _) = tunnelManager.state, h == host && p == port {
+                    Button("Disconnect SSH Tunnel") {
+                        tunnelManager.disconnect()
+                    }
+                    .buttonStyle(.capsule(.secondary, size: .small))
+                } else {
+                    Button("Connect SSH Tunnel (Port 8188)") {
+                        tunnelManager.connect(sshHost: host, sshPort: port, remotePort: 8188, localPort: 8188)
+                    }
+                    .buttonStyle(.capsule(.prominent, size: .small))
+                }
+            }
+        }
+        .padding(AppTheme.Spacing.xs)
+        .background(AppTheme.Background.surfaceColor)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xs))
+    }
+
+    private var tunnelStatusHeader: some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            Circle()
+                .fill(tunnelColor)
+                .frame(width: 8, height: 8)
+            Text(tunnelText)
+                .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+        }
+    }
+
+    private var tunnelColor: Color {
+        switch tunnelManager.state {
+        case .connected: return Color.green
+        case .connecting: return Color.orange
+        case .failed: return Color.red
+        case .disconnected: return AppTheme.Text.tertiaryColor
+        }
+    }
+
+    private var tunnelText: String {
+        switch tunnelManager.state {
+        case .connected(let host, _, let localPort):
+            return "SSH Tunnel Active: 127.0.0.1:\(localPort) ➔ \(host)"
+        case .connecting:
+            return "Connecting SSH Tunnel..."
+        case .failed(let reason):
+            return "Tunnel Error: \(reason)"
+        case .disconnected:
+            return "SSH Tunnel Disconnected"
         }
     }
 
@@ -232,6 +360,33 @@ struct ModelsPane: View {
         } else {
             hasLeonardoKey = false
             maskedLeonardoKey = ""
+        }
+        if let k = VastAIKeychain.load(), !k.isEmpty {
+            hasVastKey = true
+            maskedVastKey = mask(k)
+            fetchVastInstances()
+        } else {
+            hasVastKey = false
+            maskedVastKey = ""
+            vastInstances = []
+        }
+    }
+
+    private func fetchVastInstances() {
+        guard hasVastKey else { return }
+        isLoadingVastInstances = true
+        Task {
+            do {
+                let insts = try await VastAIClient.listInstances()
+                await MainActor.run {
+                    self.vastInstances = insts
+                    self.isLoadingVastInstances = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLoadingVastInstances = false
+                }
+            }
         }
     }
 
