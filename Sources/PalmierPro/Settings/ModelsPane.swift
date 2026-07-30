@@ -24,6 +24,10 @@ struct ModelsPane: View {
     @State private var hasKlingKey = false
     @State private var maskedKlingKey = ""
 
+    @State private var leonardoKeyDraft = ""
+    @State private var hasLeonardoKey = false
+    @State private var maskedLeonardoKey = ""
+
     private struct Row: Identifiable {
         let id: String
         let displayName: String
@@ -127,6 +131,21 @@ struct ModelsPane: View {
                     },
                     onRemove: { KlingKeychain.delete(); refreshKeys() }
                 )
+
+                Divider().overlay(AppTheme.Border.subtleColor)
+
+                keyInputRow(
+                    label: "Leonardo.Ai API Key (Image Generation)",
+                    placeholder: "leo_key_...",
+                    hasKey: hasLeonardoKey,
+                    maskedKey: maskedLeonardoKey,
+                    draft: $leonardoKeyDraft,
+                    onSave: {
+                        let trimmed = leonardoKeyDraft.trimmingCharacters(in: .whitespaces)
+                        if !trimmed.isEmpty { LeonardoKeychain.save(trimmed); leonardoKeyDraft = ""; refreshKeys() }
+                    },
+                    onRemove: { LeonardoKeychain.delete(); refreshKeys() }
+                )
             }
             .padding(.vertical, AppTheme.Spacing.xs)
         }
@@ -202,6 +221,13 @@ struct ModelsPane: View {
         } else {
             hasKlingKey = false
             maskedKlingKey = ""
+        }
+        if let k = LeonardoKeychain.load(), !k.isEmpty {
+            hasLeonardoKey = true
+            maskedLeonardoKey = mask(k)
+        } else {
+            hasLeonardoKey = false
+            maskedLeonardoKey = ""
         }
     }
 
