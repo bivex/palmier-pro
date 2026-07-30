@@ -1,0 +1,131 @@
+import Foundation
+
+extension ToolExecutor {
+    func manageVast(_ editor: EditorViewModel, _ args: [String: Any]) async throws -> ToolResult {
+        let action = args.string("action") ?? "status"
+
+        switch action {
+        case "status":
+            let instances = (try? await VastAIClient.listInstances()) ?? []
+            let activeInstance = instances.first(where: { $0.isRunning })
+            let tunnelState = SSHTunnelManager.shared.state
+            let (isComfyOnline, comfyStats) = await ComfyUIClient.checkHealth()
+            let prices = await VastAIClient.fetchLiveGpuPrices()
+
+            var info: [String: Any] = [
+                "activeInstancesCount": instances.count,
+                "runningInstance": activeInstance?.displayName ?? "none",
+                "sshHost": activeInstance?.ssh_host ?? "none",
+                "sshPort": activeInstance?.ssh_port ?? 0,
+                "tunnelState": String(describing: tunnelState),
+                "comfyUIOnline": isComfyOnline,
+                "liveMarketPrices": prices
+            ]
+            if let stats = comfyStats?.system {
+                info["comfyuiVersion"] = stats.comfyui_version ?? "unknown"
+                info["pytorchVersion"] = stats.pytorch_version ?? "unknown"
+            }
+            if let devices = comfyStats?.devices?.compactMap(\.name) {
+                info["gpus"] = devices
+            }
+
+            guard let jsonStr = Self.jsonString(info) else {
+                return .error("Failed to encode Vast status")
+            }
+            return .ok(jsonStr)
+
+        case "list_instances":
+            let instances = try await VastAIClient.listInstances()
+            let list = instances.map { inst in
+                [
+                    "id": inst.id,
+                    "status": inst.actual_status ?? "unknown",
+                    "displayName": inst.displayName,
+                    "sshHost": inst.ssh_host ?? "",
+                    "sshPort": inst.ssh_port ?? 0
+                ] as [String: Any]
+            }
+            guard let jsonStr = Self.jsonString(["instances": list]) else {
+                return .error("Failed to encode instances")
+            }
+            return .ok(jsonStr)
+
+        case "list_offers":
+            let gpuName = args.string("gpuName") ?? "RTX 3090"
+            let best = try await VastAIClient.searchBestOffer(gpuType: gpuName)
+            let offerInfo: [String: Any] = [
+                "id": best.id,
+                "gpu": best.gpu_name ?? gpuName,
+                "dph": best.dph_total ?? 0.0,
+                "price": best.formattedPrice
+            ]
+            guard let jsonStr = Self.jsonString(["bestOffer": offerInfo]) else {
+                return .error("Failed to encode offer")
+            }
+            return .ok(jsonStr)
+
+        case "launch_instance":
+            let offerId = args.int("offerId")
+            let gpuName = args.string("gpuName") ?? "RTX 3090"
+            let targetOfferId: Int
+            if let offerId {
+                targetOfferId = offerId
+            } else {
+                let best = try await VastAIClient.searchBestOffer(gpuType: gpuName)
+                targetOfferId = best.id
+            }
+            try await VastAIClient.createInstance(offerId: targetOfferId)
+            return .ok("Successfully submitted GPU rental request for Vast offer #\(targetOfferId). The container is starting up and initializing ComfyUI. Call manage_vast action='status' in ~2 minutes.")
+
+        case "connect_tunnel":
+            let instances = try await VastAIClient.listInstances()
+            guard let running = instances.first(where: { $0.isRunning }),
+                  let host = running.ssh_host,
+                  let port = running.ssh_port else {
+                throw ToolError("No running Vast.ai instance found with SSH credentials. Launch an instance first.")
+            }
+            await MainActor.run {
+                SSHTunnelManager.shared.connect(sshHost: host, sshPort: port)
+            }
+            return .ok("Initiated SSH Local Tunnel to root@\(host):\(port) (forwarding 127.0.0.1:8188). Check status in a few seconds.")
+
+        case "generate_image":
+            let prompt = try args.requireString("prompt")
+            let width = args.int("width") ?? 1024
+            let height = args.int("height") ?? 1024
+
+            let (online, _) = await ComfyUIClient.checkHealth()
+            if !online {
+                let instances = (try? await VastAIClient.listInstances()) ?? []
+                if let running = instances.first(where: { $0.isRunning }),
+                   let host = running.ssh_host,
+                   let port = running.ssh_port {
+                    await MainActor.run {
+                        SSHTunnelManager.shared.connect(sshHost: host, sshPort: port)
+                    }
+                    try await Task.sleep(nanoseconds: 3_000_000_000)
+                }
+            }
+
+            let fileURL = try await ComfyUIClient.generateImage(prompt: prompt, width: width, height: height)
+
+            guard editor.projectURL != nil else {
+                throw ToolError("No project is open to import generated image")
+            }
+
+            let name = args.string("name") ?? "VastAI_\(UUID().uuidString.prefix(6)).png"
+            let asset = try editor.undo.perform("Generate Image via Vast.ai (Agent)") {
+                guard let asset = editor.addMediaAsset(from: fileURL, finalize: false) else {
+                    throw ToolError("Failed to register generated image asset")
+                }
+                applyImportMetadata(editor: editor, asset: asset, name: name, folderId: String?.none)
+                return asset
+            }
+
+            return .ok("Successfully generated image via ComfyUI on GPU! Media asset ID: '\(asset.id)' (\(asset.name)). Use add_clips to place it on the timeline.")
+
+        default:
+            throw ToolError("Unknown action '\(action)'. Valid actions: status, list_instances, list_offers, launch_instance, connect_tunnel, generate_image")
+        }
+    }
+}

@@ -263,6 +263,7 @@ final class ToolExecutor {
         case .listModels:    return listModels(args)
         case .organizeMedia: return try organizeMedia(editor, args)
         case .sendFeedback:  return try await sendFeedback(editor, args)
+        case .manageVast:    return try await manageVast(editor, args)
         case .setProjectSettings: return try setProjectSettings(editor, args)
         case .createTimeline:     return try createTimeline(editor, args)
         case .setActiveTimeline:  return try setActiveTimeline(editor, args)
