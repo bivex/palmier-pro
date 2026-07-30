@@ -85,7 +85,7 @@ struct ModelsPane: View {
     private var directProviderKeysSection: some View {
         SettingsSection(title: "Direct API Keys (BYOK - Bring Your Own Key)") {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-                Text("Use your own API keys for Google Gemini/Imagen, Fal.ai (Kling, Seedance, Veo), or Kling directly without requiring a Palmier subscription.")
+                Text("Use your own API keys for Google Gemini/Imagen, Fal.ai (Kling, Seedance, Veo), Leonardo.Ai, or Kling directly without requiring a Palmier subscription.")
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
 
@@ -146,6 +146,10 @@ struct ModelsPane: View {
                     },
                     onRemove: { LeonardoKeychain.delete(); refreshKeys() }
                 )
+
+                Text("Note: Leonardo API access requires paid API Credits from the Leonardo API Access page (separate from web app free tokens).")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
             .padding(.vertical, AppTheme.Spacing.xs)
         }
