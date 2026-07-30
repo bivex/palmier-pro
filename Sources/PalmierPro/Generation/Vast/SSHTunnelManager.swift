@@ -18,6 +18,7 @@ final class SSHTunnelManager: ObservableObject {
 
     private var process: Process?
     private var healthCheckTask: Task<Void, Never>?
+    private var lastSshError: String?
 
     private init() {
         NotificationCenter.default.addObserver(
@@ -51,31 +52,48 @@ final class SSHTunnelManager: ObservableObject {
 
         self.activeLocalPort = localPort
         self.state = .connecting(host: sshHost, port: sshPort, localPort: localPort)
+        self.lastSshError = nil
         print("[ssh-tunnel] NOTICE: Connecting SSH Local Tunnel to root@\(sshHost):\(sshPort) (forwarding 127.0.0.1:\(localPort))...")
 
+        launchSSHProcess(localPort: localPort, host: sshHost, port: sshPort)
+        startHealthCheck(localPort: localPort, host: sshHost, port: sshPort)
+    }
+
+    private func launchSSHProcess(localPort: Int, host: String, port: Int) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         var args = [
             "-N",
             "-L", "\(localPort):127.0.0.1:18188",
-            "-p", "\(sshPort)",
-            "root@\(sshHost)",
+            "-p", "\(port)",
+            "root@\(host)",
             "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "ServerAliveInterval=15"
+            "-o", "ExitOnForwardFailure=yes",
+            "-o", "ServerAliveInterval=15",
+            "-o", "ConnectTimeout=5"
         ]
-        if let keyPath = SSHTunnelManager.findDefaultPrivateKeyPath() {
-            args.append(contentsOf: ["-i", keyPath, "-o", "IdentitiesOnly=yes"])
+        let keyPaths = SSHTunnelManager.findAllPrivateKeyPaths()
+        for keyPath in keyPaths {
+            args.append(contentsOf: ["-i", keyPath])
         }
         proc.arguments = args
-        proc.standardError = FileHandle.nullDevice
+
+        let errPipe = Pipe()
+        proc.standardError = errPipe
         proc.standardOutput = FileHandle.nullDevice
 
         proc.terminationHandler = { [weak self] p in
+            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            let errStr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
             Task { @MainActor in
                 guard let self else { return }
+                if !errStr.isEmpty {
+                    self.lastSshError = errStr
+                }
                 if case .connected = self.state {
-                    self.state = .failed(reason: "SSH process exited unexpectedly (code \(p.terminationStatus))")
+                    self.state = .failed(reason: "SSH process exited unexpectedly (code \(p.terminationStatus)): \(errStr)")
                 }
             }
         }
@@ -83,7 +101,6 @@ final class SSHTunnelManager: ObservableObject {
         do {
             try proc.run()
             self.process = proc
-            startHealthCheck(localPort: localPort, host: sshHost, port: sshPort)
         } catch {
             self.state = .failed(reason: "Failed to launch SSH: \(error.localizedDescription)")
         }
@@ -109,7 +126,6 @@ final class SSHTunnelManager: ObservableObject {
             print("[ssh-tunnel] NOTICE: Killed stale SSH process (pid \(pid)) holding port \(localPort)")
         }
     }
-
 
     /// Disconnect current SSH Local Tunnel
     func disconnect() {
@@ -140,9 +156,18 @@ final class SSHTunnelManager: ObservableObject {
                 }
 
                 if let proc = self.process, !proc.isRunning {
-                    print("[ssh-tunnel] NOTICE: Container SSH process exited (attempt \(attempt)/90). Retrying connection...")
+                    let errMsg = self.lastSshError ?? "unknown error"
+                    let isAuthError = errMsg.contains("Permission denied") || errMsg.contains("Host key verification failed") || errMsg.contains("Authentication failed")
+
+                    if isAuthError {
+                        print("[ssh-tunnel] ERROR: SSH authentication failed for root@\(host):\(port): \(errMsg)")
+                        self.state = .failed(reason: "SSH authentication failed for root@\(host):\(port). Double check your SSH public key on Vast.ai account: \(errMsg)")
+                        return
+                    }
+
+                    print("[ssh-tunnel] NOTICE: SSH process exited (attempt \(attempt)/90: \(errMsg)). Retrying connection...")
                     self.state = .connecting(host: host, port: port, localPort: localPort)
-                    self.restartSSHProcess(localPort: localPort, host: host, port: port)
+                    self.launchSSHProcess(localPort: localPort, host: host, port: port)
                 }
             }
 
@@ -152,40 +177,6 @@ final class SSHTunnelManager: ObservableObject {
                 print("[ssh-tunnel] ERROR: Connection timed out after 90 attempts.")
             }
         }
-    }
-
-    private func restartSSHProcess(localPort: Int, host: String, port: Int) {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        var args = [
-            "-N",
-            "-L", "\(localPort):127.0.0.1:18188",
-            "-p", "\(port)",
-            "root@\(host)",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "ExitOnForwardFailure=yes",
-            "-o", "ServerAliveInterval=15",
-            "-o", "ConnectTimeout=5"
-        ]
-        if let keyPath = SSHTunnelManager.findDefaultPrivateKeyPath() {
-            args.append(contentsOf: ["-i", keyPath, "-o", "IdentitiesOnly=yes"])
-        }
-        proc.arguments = args
-        proc.standardError = FileHandle.nullDevice
-        proc.standardOutput = FileHandle.nullDevice
-
-        proc.terminationHandler = { [weak self] p in
-            Task { @MainActor in
-                guard let self else { return }
-                if case .connected = self.state {
-                    self.state = .failed(reason: "SSH process exited unexpectedly (code \(p.terminationStatus))")
-                }
-            }
-        }
-
-        try? proc.run()
-        self.process = proc
     }
 
     private func checkPortResponsive(localPort: Int) async -> Bool {
@@ -209,18 +200,19 @@ final class SSHTunnelManager: ObservableObject {
         return false
     }
 
-    nonisolated static func findDefaultPrivateKeyPath() -> String? {
+    nonisolated static func findAllPrivateKeyPaths() -> [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             "\(home)/.ssh/id_ed25519",
             "\(home)/.ssh/id_rsa",
+            "\(home)/.ssh/id_ecdsa",
+            "\(home)/.ssh/id_dsa",
             "\(home)/.ssh/id_vast_ai"
         ]
-        for path in candidates {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-        }
-        return nil
+        return candidates.filter { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    nonisolated static func findDefaultPrivateKeyPath() -> String? {
+        findAllPrivateKeyPaths().first
     }
 }
