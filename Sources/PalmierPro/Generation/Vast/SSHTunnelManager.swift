@@ -215,4 +215,20 @@ final class SSHTunnelManager: ObservableObject {
     nonisolated static func findDefaultPrivateKeyPath() -> String? {
         findAllPrivateKeyPaths().first
     }
+
+    nonisolated static func loadDefaultPublicKey() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "\(home)/.ssh/id_ed25519.pub",
+            "\(home)/.ssh/id_rsa.pub",
+            "\(home)/.ssh/id_ecdsa.pub",
+            "\(home)/.ssh/id_vast_ai.pub"
+        ]
+        for path in candidates {
+            if let content = try? String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
+                return content
+            }
+        }
+        return nil
+    }
 }

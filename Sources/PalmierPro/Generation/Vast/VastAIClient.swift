@@ -279,13 +279,17 @@ enum VastAIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let comfyStartScript = "bash /opt/ai-dock/bin/init.sh >> /var/log/ai-dock-init.log 2>&1 &"
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "client_id": "me",
             "image": image,
             "disk": diskGb,
             "runtype": "ssh_direc ssh_proxy",
             "onstart_cmd": comfyStartScript
         ]
+        if let pubKey = SSHTunnelManager.loadDefaultPublicKey() {
+            try? await uploadSSHKey(pubKey)
+            body["ssh_key"] = pubKey
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: req)
