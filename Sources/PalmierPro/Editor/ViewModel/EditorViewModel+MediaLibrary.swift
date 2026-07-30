@@ -128,6 +128,13 @@ private enum MediaImportScanner {
 
 extension EditorViewModel {
 
+    nonisolated static let persistentCacheDirectory: URL = {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("PalmierPro/MediaCache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        return appSupport
+    }()
+
     func commitStagedProjectMedia(
         _ stagedURL: URL,
         filename: String,
@@ -136,7 +143,7 @@ extension EditorViewModel {
     ) async throws -> URL {
         defer { try? FileManager.default.removeItem(at: stagedURL) }
         guard projectURL != nil else {
-            let destination = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+            let destination = Self.persistentCacheDirectory.appendingPathComponent(filename)
             return try await Task.detached(priority: .userInitiated) {
                 try FileIO.moveReplacingDestination(from: stagedURL, to: destination, maxBytes: maxBytes)
                 return destination
@@ -174,13 +181,24 @@ extension EditorViewModel {
     }
 
     func rebaseProjectURL(from oldURL: URL, to newURL: URL) {
-        guard projectURL?.standardizedFileURL == oldURL.standardizedFileURL else { return }
         let oldPrefix = oldURL.standardizedFileURL.path + "/"
         let newRoot = newURL.standardizedFileURL
+        let targetMediaDir = newRoot.appendingPathComponent(Project.mediaDirectoryName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: targetMediaDir, withIntermediateDirectories: true)
+
         for asset in mediaAssets {
             let path = asset.url.standardizedFileURL.path
-            guard path.hasPrefix(oldPrefix) else { continue }
-            asset.url = newRoot.appendingPathComponent(String(path.dropFirst(oldPrefix.count)))
+            if path.hasPrefix(oldPrefix) {
+                asset.url = newRoot.appendingPathComponent(String(path.dropFirst(oldPrefix.count)))
+            } else if !path.hasPrefix(newRoot.path) {
+                let dest = targetMediaDir.appendingPathComponent(asset.url.lastPathComponent)
+                if FileManager.default.fileExists(atPath: asset.url.path), !FileManager.default.fileExists(atPath: dest.path) {
+                    try? FileManager.default.copyItem(at: asset.url, to: dest)
+                    asset.url = dest
+                } else if FileManager.default.fileExists(atPath: dest.path) {
+                    asset.url = dest
+                }
+            }
         }
         projectURL = newRoot
         refreshMissingMediaCache()

@@ -185,9 +185,9 @@ enum ComfyUIClient {
             let (imageData, iResp) = try await URLSession.shared.data(from: viewURL)
             guard let iHttp = iResp as? HTTPURLResponse, (200...299).contains(iHttp.statusCode) else { continue }
 
-            // Write image to temp file
-            let tempDir = FileManager.default.temporaryDirectory
-            let targetURL = tempDir.appendingPathComponent("comfy_\(UUID().uuidString).png")
+            // Write image to persistent cache directory
+            let cacheDir = EditorViewModel.persistentCacheDirectory
+            let targetURL = cacheDir.appendingPathComponent("comfy_\(UUID().uuidString).png")
             try imageData.write(to: targetURL)
             return targetURL
         }
