@@ -6,6 +6,7 @@ struct VastAIPane: View {
     @State private var maskedVastKey = ""
     @State private var vastInstances: [VastAIClient.VastInstance] = []
     @State private var vastUserInfo: VastAIClient.VastUserInfo?
+    @State private var livePrices: [String: String] = [:]
     @State private var isLoading = false
     @State private var isDeploying = false
     @State private var deployError: String?
@@ -22,10 +23,10 @@ struct VastAIPane: View {
     ]
 
     private let gpuOptions = [
-        ("RTX 4090", "NVIDIA RTX 4090 (24GB VRAM)", "~$0.25 - $0.35/hr"),
-        ("RTX 3090", "NVIDIA RTX 3090 (24GB VRAM)", "~$0.15 - $0.25/hr"),
-        ("A100 PCIE 80GB", "NVIDIA A100 (80GB VRAM)", "~$0.80 - $1.20/hr"),
-        ("ANY", "Any Available GPU (Cheapest)", "Lowest $/hr rate")
+        ("RTX 4090", "NVIDIA RTX 4090 (24GB VRAM)", "Fetching live API price..."),
+        ("RTX 3090", "NVIDIA RTX 3090 (24GB VRAM)", "Fetching live API price..."),
+        ("A100 PCIE 80GB", "NVIDIA A100 (80GB VRAM)", "Fetching live API price..."),
+        ("ANY", "Any Available GPU (Cheapest)", "Fetching live API price...")
     ]
 
     var body: some View {
@@ -156,7 +157,8 @@ struct VastAIPane: View {
 
                     Picker("", selection: $selectedGPUType) {
                         ForEach(gpuOptions, id: \.0) { gpu in
-                            Text("\(gpu.1) (\(gpu.2))").tag(gpu.0)
+                            let price = livePrices[gpu.0] ?? gpu.2
+                            Text("\(gpu.1) — \(price)").tag(gpu.0)
                         }
                     }
                     .labelsHidden()
@@ -319,11 +321,16 @@ struct VastAIPane: View {
             Task {
                 async let instsTask = VastAIClient.listInstances()
                 async let infoTask = VastAIClient.fetchUserInfo()
+                async let pricesTask = VastAIClient.fetchLiveGpuPrices()
+
                 let insts = (try? await instsTask) ?? []
                 let info = try? await infoTask
+                let prices = await pricesTask
+
                 await MainActor.run {
                     self.vastInstances = insts
                     self.vastUserInfo = info
+                    self.livePrices = prices
                     self.isLoading = false
                 }
             }

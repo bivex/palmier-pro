@@ -274,4 +274,16 @@ enum VastAIClient {
 
         print("[vast-ai] NOTICE: Offer #\(offerId) rented successfully! Container starting up.")
     }
+
+    /// Fetch live minimum market prices for supported GPU types directly from Vast.ai API
+    static func fetchLiveGpuPrices() async -> [String: String] {
+        let types = ["RTX 4090", "RTX 3090", "A100 PCIE 80GB", "ANY"]
+        var results: [String: String] = [:]
+        for type in types {
+            if let best = try? await searchBestOffer(gpuType: type) {
+                results[type] = best.formattedPrice
+            }
+        }
+        return results
+    }
 }
