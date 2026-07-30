@@ -197,7 +197,7 @@ enum VastAIClient {
     }
 
     /// Search cheapest available offer for requested GPU type
-    static func searchBestOffer(gpuType: String) async throws -> VastOffer {
+    static func searchBestOffer(gpuType: String, region: String = "ANY") async throws -> VastOffer {
         guard let apiKey = VastAIKeychain.load() else {
             print("[vast-ai] ERROR: Vast.ai API key is missing")
             throw VastError.missingAPIKey
@@ -223,6 +223,14 @@ enum VastAIClient {
 
         if gpuType != "ANY" {
             body["gpu_name"] = ["eq": gpuType]
+        }
+
+        if region == "US" {
+            body["geolocation"] = ["in": ["US", "United States", "CA", "Canada"]]
+        } else if region == "EU" {
+            body["geolocation"] = ["in": ["DE", "Germany", "FR", "France", "UK", "United Kingdom", "NL", "Netherlands", "SE", "Sweden", "FI", "Finland", "NO", "Norway", "PL", "Poland", "RO", "Romania", "EU", "Europe"]]
+        } else if region == "ASIA" {
+            body["geolocation"] = ["in": ["JP", "Japan", "KR", "Korea", "South Korea", "SG", "Singapore", "HK", "Hong Kong", "IN", "India", "AU", "Australia"]]
         }
 
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
